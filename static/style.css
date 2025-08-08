@@ -1,0 +1,128 @@
+/* media_viewer/static/style.css */
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background-color: #000; /* Black background for full-screen effect */
+    color: #fff; /* White text */
+    overflow: hidden; /* Hide scrollbars if media slightly overflows */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh; /* Ensure body takes full viewport height */
+    position: relative; /* For absolute positioning of controls */
+}
+
+.controls {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000; /* Ensure controls are on top of media */
+    background: rgba(0, 0, 0, 0.7); /* Semi-transparent black background */
+    padding: 10px 20px;
+    border-radius: 8px;
+    display: flex;
+    gap: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    opacity: 0; /* Start with opacity 0 to hide it */
+    pointer-events: none; /* Prevent interaction when hidden */
+    transition: opacity 0.3s ease-in-out; /* Add a smooth transition */
+}
+
+/* Add a class to make it visible */
+.controls.visible {
+    opacity: 1;
+    pointer-events: auto; /* Enable interaction when visible */
+}
+
+input[type="text"] {
+    padding: 8px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background-color: #333;
+    color: #fff;
+    font-size: 1em;
+    width: 200px;
+}
+
+button {
+    padding: 8px 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: background-color 0.2s ease;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+.media-container {
+    width: 100vw; /* Take full viewport width */
+    height: 100vh; /* Take full viewport height */
+    display: flex;
+    flex-direction: column; /* Stack title above media */
+    align-items: center;
+    justify-content: center;
+    position: relative; /* For positioning media elements */
+}
+
+#mediaTitle {
+    position: absolute;
+    top: 100px; /* Adjust as needed to be below controls */
+    font-size: 2em;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    z-index: 999; /* Below controls, above media */
+    opacity: 0; /* Start with opacity 0 to hide it */
+    transition: opacity 0.3s ease-in-out; /* Add a smooth transition for fading */
+    pointer-events: none; /* Prevent it from interfering with clicks/taps on media */
+}
+
+/* Add a class to make it visible */
+#mediaTitle.visible {
+    opacity: 1;
+}
+
+#mediaDisplay {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden; /* Hide any overflow from the media */
+    /* REMOVED: opacity and transition from here */
+}
+
+/* REMOVED: #mediaDisplay.media-display-active class */
+
+#mediaDisplay img,
+#mediaDisplay video {
+    width: 100%; /* Forces the media to take 100% of its parent's width */
+    height: 100%; /* Forces the media to take 100% of its parent's height */
+    object-fit: cover; /* Ensures the entire media fills the container, cropping if necessary */
+    display: block; /* Remove extra space below images/videos */
+}
+
+/* Styling for the transition video overlay */
+.transition-overlay {
+    position: fixed; /* Fixed to the viewport */
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover; /* Cover the entire screen, cropping if necessary */
+    z-index: 2000; /* Ensure it's above everything else (controls are 1000, title is 999) */
+    opacity: 0; /* Initially hidden */
+    visibility: hidden; /* Also hidden from accessibility tree and layout */
+    transition: opacity 0.3s ease-in-out; /* Smooth fade effect */
+}
+
+.transition-overlay.active {
+    opacity: 1; /* Fully visible */
+    visibility: visible; /* Make it visible */
+}
