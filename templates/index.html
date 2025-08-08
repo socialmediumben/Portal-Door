@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    
+    <!-- Preload transition videos from the local static folder -->
+    <link rel="preload" href="{{ url_for('static', filename='videos/Door Close.webm') }}" as="video" type="video/webm" crossorigin>
+    <link rel="preload" href="{{ url_for('static', filename='videos/Door Open.webm') }}" as="video" type="video/webm" crossorigin>
+    
+</head>
+<body>
+    <div class="controls">
+        <input type="text" id="contentIdInput" placeholder="Enter Content ID">
+        <button id="fetchMediaBtn">Show Media</button>
+    </div>
+
+    <div class="media-container">
+        <h2 id="mediaTitle"></h2>
+        <div id="mediaDisplay">
+            </div>
+    </div>
+
+    <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto">
+        </video>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
