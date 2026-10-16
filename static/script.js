@@ -7,6 +7,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const mediaTitle = document.getElementById('mediaTitle');
     const mediaDisplay = document.getElementById('mediaDisplay');
     const transitionVideo = document.getElementById('transitionVideo');
+    const soundToggleBtn = document.getElementById('soundToggleBtn');
+    const soundToast = document.getElementById('soundToast');
+    const devDatasetList = document.getElementById('devDatasetList');
 
     // Google Sheet CSV export link
     const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/gviz/tq?tqx=out:csv";
@@ -19,10 +22,59 @@ document.addEventListener('DOMContentLoaded', () => {
     let mediaDatabase = {};
     let isTransitioning = false;
     let isAtHomeScreen = true;
+    let isMuted = false; // Default sound ON as requested
+    let soundToastTimeout = null;
 
     // Buffer for global NFC reader inputs (HID keyboard wedge)
     let nfcBuffer = "";
     let nfcTimeout = null;
+
+    // --- Sound Management ---
+    function updateSoundUI() {
+        if (soundToggleBtn) {
+            soundToggleBtn.textContent = isMuted ? '🔇 Sound: OFF' : '🔊 Sound: ON';
+            soundToggleBtn.classList.toggle('muted', isMuted);
+        }
+    }
+
+    function toggleSound(forcedState) {
+        if (typeof forcedState === 'boolean') {
+            isMuted = forcedState;
+        } else {
+            isMuted = !isMuted;
+        }
+
+        updateSoundUI();
+
+        // 1. Update native HTML5 video if playing
+        const activeVideo = mediaDisplay.querySelector('video');
+        if (activeVideo) {
+            activeVideo.muted = isMuted;
+        }
+
+        // 2. Update YouTube iframe if playing (via YouTube IFrame API postMessage)
+        const activeIframe = mediaDisplay.querySelector('iframe');
+        if (activeIframe && activeIframe.contentWindow) {
+            const ytCommand = isMuted ? 'mute' : 'unMute';
+            activeIframe.contentWindow.postMessage(JSON.stringify({
+                event: 'command',
+                func: ytCommand,
+                args: []
+            }), '*');
+        }
+
+        // 3. Show floating toast notification on screen
+        if (soundToast) {
+            soundToast.textContent = isMuted ? '🔇 Sound: OFF' : '🔊 Sound: ON';
+            soundToast.classList.add('visible');
+            clearTimeout(soundToastTimeout);
+            soundToastTimeout = setTimeout(() => {
+                soundToast.classList.remove('visible');
+            }, 1500);
+        }
+
+        console.log(`[v2.4] Audio toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
+    }
 
     // --- Helper: Robust CSV parser ---
     function parseCSV(text) {
@@ -94,6 +146,40 @@ document.addEventListener('DOMContentLoaded', () => {
         return clean;
     }
 
+    // --- Render Dataset Preview in Developer Mode (First 10 items) ---
+    function renderDatasetPreview() {
+        if (!devDatasetList) return;
+
+        const items = Object.values(mediaDatabase).slice(0, 10);
+        if (items.length === 0) {
+            devDatasetList.innerHTML = '<div class="dev-dataset-empty">No items loaded. Check Google Sheet link or internet.</div>';
+            return;
+        }
+
+        devDatasetList.innerHTML = '';
+        items.forEach((item) => {
+            const row = document.createElement('div');
+            row.className = 'dev-dataset-item';
+            row.title = `Click to test ID: ${item.id}`;
+
+            const badgeClass = item.type === 'youtube' ? 'badge-youtube' : (item.type === 'image' ? 'badge-image' : 'badge-video');
+
+            row.innerHTML = `
+                <span class="dev-item-id">${item.id}</span>
+                <span class="dev-item-name" title="${item.title || item.file_path}">${item.title || item.file_path || 'Untitled'}</span>
+                <span class="dev-item-badge ${badgeClass}">${item.type || 'media'}</span>
+            `;
+
+            row.addEventListener('click', () => {
+                console.log(`[v2.4] Preview item clicked: ${item.id}`);
+                contentIdInput.value = item.id;
+                fetchMedia(item.id);
+            });
+
+            devDatasetList.appendChild(row);
+        });
+    }
+
     // --- Load media database (Google Sheet with JSON fallback) ---
     async function loadMediaDatabase() {
         let loadedFromSheet = false;
@@ -101,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Try Google Sheets CSV
         if (GOOGLE_SHEET_CSV_URL) {
             try {
-                console.log("[v2.3] Fetching dataset from Google Sheets...");
+                console.log("[v2.4] Fetching dataset from Google Sheets...");
                 const response = await fetch(GOOGLE_SHEET_CSV_URL);
                 if (response.ok) {
                     const csvText = await response.text();
@@ -137,24 +223,25 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
 
                                 newDb[id] = { id, title, type, file_path: rawPath };
-                                console.log(`[v2.3] Registered card "${id}": title="${title}", type="${type}", path="${rawPath}"`);
+                                console.log(`[v2.4] Registered card "${id}": title="${title}", type="${type}", path="${rawPath}"`);
                             }
                             mediaDatabase = newDb;
                             loadedFromSheet = true;
-                            console.log(`[v2.3] Successfully loaded ${Object.keys(mediaDatabase).length} media items from Google Sheets.`);
+                            console.log(`[v2.4] Successfully loaded ${Object.keys(mediaDatabase).length} media items from Google Sheets.`);
+                            renderDatasetPreview();
                             return true;
                         }
                     }
                 }
             } catch (sheetErr) {
-                console.warn("[v2.3] Could not load from Google Sheets (will try local fallback):", sheetErr);
+                console.warn("[v2.4] Could not load from Google Sheets (will try local fallback):", sheetErr);
             }
         }
 
         // 2. Fallback to local media_data.json
         if (!loadedFromSheet) {
             try {
-                console.log("Loading local fallback from media_data.json...");
+                console.log("[v2.4] Loading local fallback from media_data.json...");
                 const response = await fetch('media_data.json');
                 if (response.ok) {
                     const mediaList = await response.json();
@@ -164,14 +251,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             mediaDatabase[String(item.id).trim()] = item;
                         }
                     });
-                    console.log(`Loaded ${Object.keys(mediaDatabase).length} items from media_data.json.`);
+                    console.log(`[v2.4] Loaded ${Object.keys(mediaDatabase).length} items from media_data.json.`);
+                    renderDatasetPreview();
                     return true;
                 }
             } catch (jsonErr) {
-                console.error("Failed to load local media_data.json fallback:", jsonErr);
+                console.error("[v2.4] Failed to load local media_data.json fallback:", jsonErr);
             }
         }
 
+        renderDatasetPreview();
         return loadedFromSheet;
     }
 
@@ -216,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
         img.alt = "Portal Door Closed";
         mediaDisplay.appendChild(img);
         isAtHomeScreen = true;
-        console.log("[v2.3] Home Screen active (doors closed). System ready.");
+        console.log("[v2.4] Home Screen active (doors closed). System ready.");
     }
 
     // --- Return to Home Screen (triggered by Escape key) ---
@@ -229,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (isAtHomeScreen) {
-            console.log("[v2.3] Already at Home Screen.");
+            console.log("[v2.4] Already at Home Screen.");
             return;
         }
 
@@ -238,11 +327,11 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.remove('visible');
 
         try {
-            console.log("[v2.3] Returning to Home Screen (closing doors)...");
+            console.log("[v2.4] Returning to Home Screen (closing doors)...");
             await playTransition(doorCloseVideoUrl);
             showHomeScreen();
         } catch (err) {
-            console.error("[v2.3] Error returning to home screen:", err);
+            console.error("[v2.4] Error returning to home screen:", err);
             showHomeScreen();
         } finally {
             transitionVideo.classList.remove('active');
@@ -290,33 +379,33 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawPath = data.file_path || '';
             const ytId = getYouTubeVideoId(rawPath);
             const resolvedPath = normalizeMediaUrl(rawPath, data.type);
-            console.log(`[v2.3] Playing card ID: ${cleanId}, title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
+            console.log(`[v2.4] Playing card ID: ${cleanId}, title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
 
             // 3. Load media behind the closed door
             await new Promise((resolve, reject) => {
                 // CASE A: YouTube Video
                 if (data.type === 'youtube' || ytId) {
                     const videoId = ytId || rawPath.trim();
-                    console.log(`[v2.3] Embedding YouTube video ID: ${videoId}`);
+                    console.log(`[v2.4] Embedding YouTube video ID: ${videoId} (Muted: ${isMuted})`);
                     const iframe = document.createElement('iframe');
-                    iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}`;
+                    iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&loop=1&playlist=${videoId}&enablejsapi=1`;
                     iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
                     iframe.allowFullscreen = true;
                     iframe.title = data.title || "YouTube scene";
 
                     iframe.onload = () => {
-                        console.log(`[v2.3] YouTube iframe loaded successfully.`);
+                        console.log(`[v2.4] YouTube iframe loaded successfully.`);
                         setTimeout(resolve, 800);
                     };
                     iframe.onerror = (err) => {
-                        console.error(`[v2.3] YouTube iframe error:`, err);
+                        console.error(`[v2.4] YouTube iframe error:`, err);
                         reject(new Error("Failed to load YouTube player"));
                     };
                     mediaDisplay.appendChild(iframe);
 
                     // Safety timeout in case YouTube buffers slowly
                     setTimeout(() => {
-                        console.log(`[v2.3] Safety timeout reached, opening door.`);
+                        console.log(`[v2.4] Safety timeout reached, opening door.`);
                         resolve();
                     }, 3500);
 
@@ -339,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     video.controls = false;
                     video.autoplay = true;
                     video.loop = true;
-                    video.muted = true;
+                    video.muted = isMuted;
                     video.playsInline = true;
 
                     mediaDisplay.appendChild(video);
@@ -348,17 +437,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     video.play().then(() => {
                         resolve();
                     }).catch(error => {
-                        console.warn("Autoplay blocked:", error);
-                        video.controls = true;
-                        mediaTitle.textContent = `${data.title} (Click to play)`;
-                        mediaTitle.classList.add('visible');
-                        video.addEventListener('click', function _listener() {
-                            video.play().then(() => {
-                                mediaTitle.classList.remove('visible');
-                                video.removeEventListener('click', _listener);
+                        console.warn("[v2.4] Autoplay error:", error);
+                        // If unmuted playback was blocked by browser policy, fallback to muted to keep door opening
+                        if (!video.muted) {
+                            console.log("[v2.4] Attempting playback fallback to muted...");
+                            video.muted = true;
+                            video.play().then(resolve).catch(err2 => {
+                                console.warn("[v2.4] Playback failed completely:", err2);
+                                resolve();
                             });
-                        });
-                        resolve();
+                        } else {
+                            resolve();
+                        }
                     });
 
                     video.onerror = () => reject(new Error(`Failed to load video: ${data.title}`));
@@ -393,6 +483,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Sound toggle button in Developer Mode
+    if (soundToggleBtn) {
+        soundToggleBtn.addEventListener('click', () => {
+            toggleSound();
+        });
+    }
+
     // --- Data reload function ---
     async function reloadData() {
         const ok = await loadMediaDatabase();
@@ -410,10 +507,11 @@ document.addEventListener('DOMContentLoaded', () => {
             event.preventDefault();
             controlsDiv.classList.toggle('visible');
             if (controlsDiv.classList.contains('visible')) {
-                console.log("[v2.3] Developer Mode opened.");
+                console.log("[v2.4] Developer Mode opened.");
+                renderDatasetPreview();
                 contentIdInput.focus();
             } else {
-                console.log("[v2.3] Developer Mode closed.");
+                console.log("[v2.4] Developer Mode closed.");
             }
             return;
         }
@@ -423,6 +521,15 @@ document.addEventListener('DOMContentLoaded', () => {
             event.preventDefault();
             returnToHomeScreen();
             return;
+        }
+
+        // Hotkey: . (dot / decimal point) toggles Sound ON/OFF
+        if (event.key === '.' || event.code === 'NumpadDecimal') {
+            if (document.activeElement !== contentIdInput) {
+                event.preventDefault();
+                toggleSound();
+                return;
+            }
         }
 
         // Hotkey: ( toggles Fullscreen
@@ -465,9 +572,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial startup
-    console.log("Portal Door v2.3 initialized.");
+    console.log("Portal Door v2.4 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
+    updateSoundUI();
     showHomeScreen();
     loadMediaDatabase();
 });

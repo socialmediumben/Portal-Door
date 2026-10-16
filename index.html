@@ -4,13 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=2.3">
+    <link rel="stylesheet" href="static/style.css?v=2.4">
 </head>
 <body>
     <div class="controls">
         <div class="dev-mode-bar">
             <span class="dev-title"><span class="dev-indicator"></span> DEVELOPER MODE</span>
-            <span class="version-badge">v2.3</span>
+            <div class="dev-bar-actions">
+                <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
+                <span class="version-badge">v2.4</span>
+            </div>
         </div>
         <div class="controls-header">
             <input type="text" id="contentIdInput" placeholder="Enter Content ID or scan NFC..." autocomplete="off">
@@ -18,12 +21,26 @@
         </div>
         <div class="hotkeys-guide">
             <div class="hotkey-item"><kbd>Tab</kbd><span>Dev Mode</span></div>
-            <div class="hotkey-item"><kbd>Esc</kbd><span>Home Screen</span></div>
+            <div class="hotkey-item"><kbd>Esc</kbd><span>Home</span></div>
+            <div class="hotkey-item"><kbd>.</kbd><span>Sound ON/OFF</span></div>
             <div class="hotkey-item"><kbd>(</kbd><span>Fullscreen</span></div>
-            <div class="hotkey-item"><kbd>)</kbd><span>Reload Sheets</span></div>
-            <div class="hotkey-item"><kbd>Enter</kbd><span>Trigger ID</span></div>
+            <div class="hotkey-item"><kbd>)</kbd><span>Reload</span></div>
+            <div class="hotkey-item"><kbd>Enter</kbd><span>Trigger</span></div>
+        </div>
+
+        <div class="dev-dataset-container">
+            <div class="dev-dataset-header">
+                <span>Google Sheet Items (First 10):</span>
+                <span class="dev-dataset-subtext">Click any row to test</span>
+            </div>
+            <div id="devDatasetList" class="dev-dataset-list">
+                <div class="dev-dataset-empty">Loading Google Sheet data...</div>
+            </div>
         </div>
     </div>
+
+    <!-- On-screen feedback toast for audio toggle -->
+    <div id="soundToast" class="sound-toast"></div>
 
     <div class="media-container">
         <h2 id="mediaTitle"></h2>
@@ -32,6 +49,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=2.3"></script>
+    <script src="static/script.js?v=2.4"></script>
 </body>
 </html>

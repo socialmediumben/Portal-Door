@@ -126,6 +126,183 @@ kbd {
     user-select: none;
 }
 
+.dev-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dev-sound-btn {
+    padding: 4px 10px;
+    font-size: 0.8em;
+    font-weight: bold;
+    background: rgba(34, 197, 94, 0.2);
+    border: 1px solid rgba(34, 197, 94, 0.5);
+    color: #4ade80;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dev-sound-btn.muted {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.5);
+    color: #f87171;
+}
+
+.dev-sound-btn:hover {
+    filter: brightness(1.15);
+}
+
+/* Dataset Preview in Developer Mode */
+.dev-dataset-container {
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 480px;
+}
+
+.dev-dataset-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.75em;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.dev-dataset-subtext {
+    font-size: 0.85em;
+    color: #64748b;
+    font-weight: normal;
+    text-transform: none;
+}
+
+.dev-dataset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 190px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.dev-dataset-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.dev-dataset-list::-webkit-scrollbar-thumb {
+    background: rgba(0, 210, 255, 0.3);
+    border-radius: 3px;
+}
+
+.dev-dataset-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.dev-dataset-item:hover {
+    background: rgba(0, 210, 255, 0.12);
+    border-color: rgba(0, 210, 255, 0.4);
+}
+
+.dev-item-id {
+    font-family: monospace;
+    font-size: 0.85em;
+    font-weight: bold;
+    color: #38bdf8;
+    background: rgba(0, 210, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+.dev-item-name {
+    flex: 1;
+    margin: 0 10px;
+    font-size: 0.85em;
+    color: #e2e8f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+}
+
+.dev-item-badge {
+    font-size: 0.7em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.badge-youtube {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.badge-video {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.badge-image {
+    background: rgba(168, 85, 247, 0.2);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+.dev-dataset-empty {
+    font-size: 0.8em;
+    color: #64748b;
+    padding: 8px;
+    text-align: center;
+}
+
+/* Sound Toast Notification */
+.sound-toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid #00d2ff;
+    color: #fff;
+    padding: 10px 22px;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 1.05em;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7), 0 0 10px rgba(0, 210, 255, 0.3);
+    z-index: 3000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.sound-toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
 input[type="text"] {
     padding: 8px 12px;
     border: 1px solid #475569;
