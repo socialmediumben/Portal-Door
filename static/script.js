@@ -239,6 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // CASE A: YouTube Video
                 if (data.type === 'youtube' || ytId) {
                     const videoId = ytId || rawPath;
+                    const iframe = document.createElement('iframe');
                     const origin = window.location.origin && window.location.origin !== "null" ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
                     iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}&enablejsapi=1${origin}`;
                     iframe.referrerPolicy = "strict-origin-when-cross-origin";
