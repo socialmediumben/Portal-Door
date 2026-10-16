@@ -477,11 +477,14 @@ button:hover {
     object-fit: cover;
     z-index: 100; /* Directly above mediaDisplay (z-index: 1), below transition overlay (z-index: 2000) */
     pointer-events: none;
-    display: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s ease-in-out;
 }
 
-#photoboothCanvas.active {
-    display: block;
+#photoboothCanvas.visible {
+    opacity: 1;
+    visibility: visible;
 }
 
 /* Styling for the transition video overlay */
