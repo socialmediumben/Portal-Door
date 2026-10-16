@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v3.0
+// static/script.js - Portal Door v4.0
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -11,6 +11,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const soundToast = document.getElementById('soundToast');
     const devDatasetList = document.getElementById('devDatasetList');
     const devDatasetTitle = document.getElementById('devDatasetTitle');
+    const photoboothToggleBtn = document.getElementById('photoboothToggleBtn');
+    const photoboothCanvas = document.getElementById('photoboothCanvas');
+    const webcamVideo = document.getElementById('webcamVideo');
 
     // Google Sheet CSV export base URL (spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0)
     const GOOGLE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/gviz/tq?tqx=out:csv";
@@ -25,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const doorOpenVideoUrl = "static/videos/Door Open.webm";
     const defaultClosedDoorUrl = "static/images/Door Closed.png";
 
-    // Datasets
+    // Datasets & Portal State
     let developerDatabase = {};
     let userDatabase = {};
     let isTransitioning = false;
@@ -36,6 +39,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // Buffer for global NFC reader inputs (HID keyboard wedge)
     let nfcBuffer = "";
     let nfcTimeout = null;
+
+    // Photobooth Mode State
+    let isPhotoboothActive = false;
+    let webcamStream = null;
+    let selfieSegmentation = null;
+    let isProcessingFrame = false;
+    let photoboothAnimationId = null;
+
+    // --- On-screen Toast Notification ---
+    function showToast(message) {
+        if (!soundToast) return;
+        soundToast.textContent = message;
+        soundToast.classList.add('visible');
+        clearTimeout(soundToastTimeout);
+        soundToastTimeout = setTimeout(() => {
+            soundToast.classList.remove('visible');
+        }, 1800);
+    }
 
     // --- Sound Management ---
     function updateSoundUI() {
@@ -71,17 +92,156 @@ document.addEventListener('DOMContentLoaded', () => {
             }), '*');
         }
 
-        // 3. Show floating toast notification on screen
-        if (soundToast) {
-            soundToast.textContent = isMuted ? '🔇 Sound: OFF' : '🔊 Sound: ON';
-            soundToast.classList.add('visible');
-            clearTimeout(soundToastTimeout);
-            soundToastTimeout = setTimeout(() => {
-                soundToast.classList.remove('visible');
-            }, 1500);
+        showToast(isMuted ? '🔇 Sound: OFF' : '🔊 Sound: ON');
+        console.log(`[v4.0] Audio toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
+    }
+
+    // --- MediaPipe Selfie Segmentation Setup ---
+    function initSelfieSegmentation() {
+        if (typeof SelfieSegmentation === 'undefined') {
+            console.warn("[v4.0] MediaPipe SelfieSegmentation not loaded yet.");
+            return null;
+        }
+        if (selfieSegmentation) return selfieSegmentation;
+
+        try {
+            selfieSegmentation = new SelfieSegmentation({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+            });
+            selfieSegmentation.setOptions({
+                modelSelection: 1, // landscape model (high accuracy)
+                selfieMode: true   // automatically flips video for natural mirror view
+            });
+            selfieSegmentation.onResults(onSelfieSegmentationResults);
+            console.log("[v4.0] MediaPipe SelfieSegmentation initialized successfully.");
+            return selfieSegmentation;
+        } catch (err) {
+            console.error("[v4.0] Error initializing SelfieSegmentation:", err);
+            return null;
+        }
+    }
+
+    function onSelfieSegmentationResults(results) {
+        if (!photoboothCanvas || !isPhotoboothActive) return;
+        const ctx = photoboothCanvas.getContext('2d');
+
+        // Match canvas internal resolution to incoming video feed
+        if (photoboothCanvas.width !== results.image.width || photoboothCanvas.height !== results.image.height) {
+            photoboothCanvas.width = results.image.width;
+            photoboothCanvas.height = results.image.height;
         }
 
-        console.log(`[v3.0] Audio toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
+        ctx.save();
+        ctx.clearRect(0, 0, photoboothCanvas.width, photoboothCanvas.height);
+
+        // 1. Draw the segmentation mask (human silhouette)
+        ctx.drawImage(results.segmentationMask, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
+
+        // 2. Composite: only draw the camera frame where the mask was drawn
+        ctx.globalCompositeOperation = 'source-in';
+        ctx.drawImage(results.image, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
+
+        ctx.restore();
+        isProcessingFrame = false;
+    }
+
+    async function renderPhotoboothLoop() {
+        if (!isPhotoboothActive) return;
+
+        if (webcamVideo && webcamVideo.readyState >= 2 && !isProcessingFrame && selfieSegmentation) {
+            isProcessingFrame = true;
+            try {
+                await selfieSegmentation.send({ image: webcamVideo });
+            } catch (err) {
+                console.warn("[v4.0] Frame segmentation error:", err);
+                isProcessingFrame = false;
+            }
+        }
+
+        photoboothAnimationId = requestAnimationFrame(renderPhotoboothLoop);
+    }
+
+    // --- Photobooth Mode Toggle ---
+    async function togglePhotobooth(forcedState) {
+        const targetState = (typeof forcedState === 'boolean') ? forcedState : !isPhotoboothActive;
+
+        if (targetState === isPhotoboothActive) return;
+
+        if (targetState) {
+            // Activating Photobooth
+            showToast("📸 Initializing Camera & AI...");
+            try {
+                initSelfieSegmentation();
+
+                webcamStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: "user"
+                    },
+                    audio: false
+                });
+
+                webcamVideo.srcObject = webcamStream;
+                await webcamVideo.play();
+
+                isPhotoboothActive = true;
+                if (photoboothCanvas) {
+                    photoboothCanvas.classList.add('active');
+                }
+
+                if (photoboothToggleBtn) {
+                    photoboothToggleBtn.textContent = '📸 Photo: ON';
+                    photoboothToggleBtn.classList.add('active');
+                }
+
+                isProcessingFrame = false;
+                renderPhotoboothLoop();
+
+                showToast("📸 Photobooth Mode: ON");
+                console.log("[v4.0] Photobooth Mode activated.");
+            } catch (err) {
+                console.error("[v4.0] Failed to start Photobooth camera:", err);
+                showToast("⚠️ Camera Error: " + (err.name || "Access Denied"));
+                isPhotoboothActive = false;
+                if (photoboothToggleBtn) {
+                    photoboothToggleBtn.textContent = '📸 Photo: OFF';
+                    photoboothToggleBtn.classList.remove('active');
+                }
+            }
+        } else {
+            // Deactivating Photobooth
+            isPhotoboothActive = false;
+
+            if (photoboothAnimationId) {
+                cancelAnimationFrame(photoboothAnimationId);
+                photoboothAnimationId = null;
+            }
+
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                webcamStream = null;
+            }
+
+            if (webcamVideo) {
+                webcamVideo.pause();
+                webcamVideo.srcObject = null;
+            }
+
+            if (photoboothCanvas) {
+                photoboothCanvas.classList.remove('active');
+                const ctx = photoboothCanvas.getContext('2d');
+                ctx.clearRect(0, 0, photoboothCanvas.width, photoboothCanvas.height);
+            }
+
+            if (photoboothToggleBtn) {
+                photoboothToggleBtn.textContent = '📸 Photo: OFF';
+                photoboothToggleBtn.classList.remove('active');
+            }
+
+            showToast("📸 Photobooth Mode: OFF");
+            console.log("[v4.0] Photobooth Mode deactivated.");
+        }
     }
 
     // --- Helper: Robust CSV parser ---
@@ -136,7 +296,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!url) return '';
         let clean = url.trim();
 
-        // Convert Google Drive share link
         const driveMatch = clean.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ||
                            clean.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/) ||
                            clean.match(/drive\.google\.com\/uc\?id=([a-zA-Z0-9_-]+)/);
@@ -147,7 +306,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
         }
 
-        // Relative local path fallback
         if (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('static/')) {
             return `static/${clean}`;
         }
@@ -169,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (idIdx === -1) {
-            console.warn(`[v3.0] No ID column found in ${sourceName} sheet.`);
+            console.warn(`[v4.0] No ID column found in ${sourceName} sheet.`);
             return db;
         }
 
@@ -183,7 +341,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawPath = pathIdx !== -1 && row[pathIdx] ? row[pathIdx].trim() : '';
             let type = typeIdx !== -1 && row[typeIdx] ? row[typeIdx].trim().toLowerCase() : '';
 
-            // Normalize type string
             if (type.includes('youtube')) type = 'youtube';
             else if (type.includes('image') || type.includes('photo')) type = 'image';
             else if (type.includes('video')) type = 'video';
@@ -214,7 +371,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         row.addEventListener('click', () => {
-            console.log(`[v3.0] Preview item clicked: ${item.id}`);
+            console.log(`[v4.0] Preview item clicked: ${item.id}`);
             contentIdInput.value = item.id;
             fetchMedia(item.id);
         });
@@ -222,7 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return row;
     }
 
-    // --- Render Dataset Preview in Developer Mode (Full Developer Tab + User Submissions) ---
+    // --- Render Dataset Preview in Developer Mode ---
     function renderDatasetPreview() {
         if (!devDatasetList) return;
 
@@ -245,7 +402,7 @@ document.addEventListener('DOMContentLoaded', () => {
             devDatasetList.appendChild(createDatasetRow(item, 'Developer'));
         });
 
-        // 2. If User-submitted items exist, render them below with a divider
+        // 2. Render User-submitted items below
         if (userItems.length > 0) {
             const userDivider = document.createElement('div');
             userDivider.className = 'dev-dataset-header';
@@ -262,43 +419,43 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Load media database from both "Developer" and "Users" Google Sheet tabs ---
+    // --- Load media database from Google Sheet tabs ---
     async function loadMediaDatabase() {
         let devLoaded = false;
         let userLoaded = false;
 
         // Fetch Developer Tab
         try {
-            console.log("[v3.0] Fetching 'Developer' tab from Google Sheets...");
+            console.log("[v4.0] Fetching 'Developer' tab from Google Sheets...");
             const devRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Developer&t=${Date.now()}`);
             if (devRes.ok) {
                 const text = await devRes.text();
                 developerDatabase = extractMediaFromRows(parseCSV(text), 'Developer');
                 devLoaded = true;
-                console.log(`[v3.0] Loaded ${Object.keys(developerDatabase).length} items from Developer tab.`);
+                console.log(`[v4.0] Loaded ${Object.keys(developerDatabase).length} items from Developer tab.`);
             }
         } catch (err) {
-            console.warn("[v3.0] Could not load 'Developer' tab:", err);
+            console.warn("[v4.0] Could not load 'Developer' tab:", err);
         }
 
         // Fetch Users Tab
         try {
-            console.log("[v3.0] Fetching 'Users' tab from Google Sheets...");
+            console.log("[v4.0] Fetching 'Users' tab from Google Sheets...");
             const userRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Users&t=${Date.now()}`);
             if (userRes.ok) {
                 const text = await userRes.text();
                 userDatabase = extractMediaFromRows(parseCSV(text), 'Users');
                 userLoaded = true;
-                console.log(`[v3.0] Loaded ${Object.keys(userDatabase).length} items from Users tab.`);
+                console.log(`[v4.0] Loaded ${Object.keys(userDatabase).length} items from Users tab.`);
             }
         } catch (err) {
-            console.warn("[v3.0] Could not load 'Users' tab:", err);
+            console.warn("[v4.0] Could not load 'Users' tab:", err);
         }
 
         // Fallback to local media_data.json if both tabs failed
         if (!devLoaded && !userLoaded) {
             try {
-                console.log("[v3.0] Loading local fallback from media_data.json...");
+                console.log("[v4.0] Loading local fallback from media_data.json...");
                 const response = await fetch('media_data.json');
                 if (response.ok) {
                     const mediaList = await response.json();
@@ -308,10 +465,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             developerDatabase[String(item.id).trim()] = item;
                         }
                     });
-                    console.log(`[v3.0] Loaded ${Object.keys(developerDatabase).length} items from media_data.json fallback.`);
+                    console.log(`[v4.0] Loaded ${Object.keys(developerDatabase).length} items from media_data.json fallback.`);
                 }
             } catch (jsonErr) {
-                console.error("[v3.0] Failed to load local media_data.json fallback:", jsonErr);
+                console.error("[v4.0] Failed to load local media_data.json fallback:", jsonErr);
             }
         }
 
@@ -360,20 +517,19 @@ document.addEventListener('DOMContentLoaded', () => {
         img.alt = "Portal Door Closed";
         mediaDisplay.appendChild(img);
         isAtHomeScreen = true;
-        console.log("[v3.0] Home Screen active (doors closed). System ready.");
+        console.log("[v4.0] Home Screen active (doors closed). System ready.");
     }
 
     // --- Return to Home Screen (triggered by Escape key) ---
     async function returnToHomeScreen() {
         if (isTransitioning) return;
 
-        // Close Developer Mode if open
         if (controlsDiv.classList.contains('visible')) {
             controlsDiv.classList.remove('visible');
         }
 
         if (isAtHomeScreen) {
-            console.log("[v3.0] Already at Home Screen.");
+            console.log("[v4.0] Already at Home Screen.");
             return;
         }
 
@@ -382,11 +538,11 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.remove('visible');
 
         try {
-            console.log("[v3.0] Returning to Home Screen (closing doors)...");
+            console.log("[v4.0] Returning to Home Screen (closing doors)...");
             await playTransition(doorCloseVideoUrl);
             showHomeScreen();
         } catch (err) {
-            console.error("[v3.0] Error returning to home screen:", err);
+            console.error("[v4.0] Error returning to home screen:", err);
             showHomeScreen();
         } finally {
             transitionVideo.classList.remove('active');
@@ -439,20 +595,19 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.remove('visible');
 
         try {
-            // 1. Check if ID exists in either Users tab or Developer tab
+            // 1. Check if ID exists in Users or Developer tab
             let data = userDatabase[cleanId] || developerDatabase[cleanId];
 
-            // If not found in current memory, do a quick fresh fetch of Users tab to see if it was JUST submitted
             if (!data) {
                 try {
-                    console.log(`[v3.0] Card "${cleanId}" not in memory. Checking Users sheet for fresh submissions...`);
+                    console.log(`[v4.0] Card "${cleanId}" not in memory. Checking Users sheet for fresh submissions...`);
                     const freshRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Users&t=${Date.now()}`);
                     if (freshRes.ok) {
                         const text = await freshRes.text();
                         userDatabase = extractMediaFromRows(parseCSV(text), 'Users');
                         data = userDatabase[cleanId];
                         if (data) {
-                            console.log(`[v3.0] Fresh submission found in Users tab for ID "${cleanId}"!`);
+                            console.log(`[v4.0] Fresh submission found in Users tab for ID "${cleanId}"!`);
                             renderDatasetPreview();
                         }
                     }
@@ -468,7 +623,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 3. CASE: UNREGISTERED CARD -> Open door to QR Code Registration Screen!
             if (!data) {
-                console.log(`[v3.0] Card "${cleanId}" is unregistered. Opening door to QR Code...`);
+                console.log(`[v4.0] Card "${cleanId}" is unregistered. Opening door to QR Code...`);
                 renderRegistrationScreen(cleanId);
                 isAtHomeScreen = false;
                 await playTransition(doorOpenVideoUrl);
@@ -479,13 +634,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawPath = data.file_path || '';
             const ytId = getYouTubeVideoId(rawPath);
             const resolvedPath = normalizeMediaUrl(rawPath, data.type);
-            console.log(`[v3.0] Playing card ID: ${cleanId} from [${data.source}], title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
+            console.log(`[v4.0] Playing card ID: ${cleanId} from [${data.source}], title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
 
             await new Promise((resolve, reject) => {
                 // CASE A: YouTube Video
                 if (data.type === 'youtube' || ytId) {
                     const videoId = ytId || rawPath.trim();
-                    console.log(`[v3.0] Embedding YouTube video ID: ${videoId} (Muted: ${isMuted})`);
+                    console.log(`[v4.0] Embedding YouTube video ID: ${videoId} (Muted: ${isMuted})`);
                     const iframe = document.createElement('iframe');
                     iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&loop=1&playlist=${videoId}&enablejsapi=1`;
                     iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
@@ -493,18 +648,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     iframe.title = data.title || "YouTube scene";
 
                     iframe.onload = () => {
-                        console.log(`[v3.0] YouTube iframe loaded successfully.`);
+                        console.log(`[v4.0] YouTube iframe loaded successfully.`);
                         setTimeout(resolve, 800);
                     };
                     iframe.onerror = (err) => {
-                        console.error(`[v3.0] YouTube iframe error:`, err);
+                        console.error(`[v4.0] YouTube iframe error:`, err);
                         reject(new Error("Failed to load YouTube player"));
                     };
                     mediaDisplay.appendChild(iframe);
 
                     // Safety timeout in case YouTube buffers slowly
                     setTimeout(() => {
-                        console.log(`[v3.0] Safety timeout reached, opening door.`);
+                        console.log(`[v4.0] Safety timeout reached, opening door.`);
                         resolve();
                     }, 3500);
 
@@ -536,12 +691,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     video.play().then(() => {
                         resolve();
                     }).catch(error => {
-                        console.warn("[v3.0] Autoplay error:", error);
+                        console.warn("[v4.0] Autoplay error:", error);
                         if (!video.muted) {
-                            console.log("[v3.0] Attempting playback fallback to muted...");
+                            console.log("[v4.0] Attempting playback fallback to muted...");
                             video.muted = true;
                             video.play().then(resolve).catch(err2 => {
-                                console.warn("[v3.0] Playback failed completely:", err2);
+                                console.warn("[v4.0] Playback failed completely:", err2);
                                 resolve();
                             });
                         } else {
@@ -558,7 +713,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await playTransition(doorOpenVideoUrl);
 
         } catch (error) {
-            console.error('[v3.0] Error during media transition:', error);
+            console.error('[v4.0] Error during media transition:', error);
             mediaTitle.textContent = error.message || 'Error loading media.';
             mediaTitle.classList.add('visible');
             showHomeScreen();
@@ -588,6 +743,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Photobooth toggle button in Developer Mode
+    if (photoboothToggleBtn) {
+        photoboothToggleBtn.addEventListener('click', () => {
+            togglePhotobooth();
+        });
+    }
+
     // --- Data reload function ---
     async function reloadData() {
         const ok = await loadMediaDatabase();
@@ -605,11 +767,11 @@ document.addEventListener('DOMContentLoaded', () => {
             event.preventDefault();
             controlsDiv.classList.toggle('visible');
             if (controlsDiv.classList.contains('visible')) {
-                console.log("[v3.0] Developer Mode opened.");
+                console.log("[v4.0] Developer Mode opened.");
                 renderDatasetPreview();
                 contentIdInput.focus();
             } else {
-                console.log("[v3.0] Developer Mode closed.");
+                console.log("[v4.0] Developer Mode closed.");
             }
             return;
         }
@@ -626,6 +788,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (document.activeElement !== contentIdInput) {
                 event.preventDefault();
                 toggleSound();
+                return;
+            }
+        }
+
+        // Hotkey: * (asterisk / multiply) toggles Photobooth Mode ON/OFF
+        if (event.key === '*' || event.code === 'NumpadMultiply') {
+            if (document.activeElement !== contentIdInput) {
+                event.preventDefault();
+                togglePhotobooth();
                 return;
             }
         }
@@ -651,7 +822,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // --- NFC Reader Support ---
-        // If manual input isn't active, capture keystrokes from NFC keyboard-emulation readers
         if (document.activeElement !== contentIdInput) {
             if (event.key === 'Enter') {
                 if (nfcBuffer.trim()) {
@@ -670,7 +840,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial startup
-    console.log("Portal Door v3.0 initialized.");
+    console.log("Portal Door v4.0 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();

@@ -169,6 +169,29 @@ kbd {
     gap: 8px;
 }
 
+.dev-photobooth-btn {
+    padding: 4px 10px;
+    font-size: 0.8em;
+    font-weight: bold;
+    background: rgba(148, 163, 184, 0.15);
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    color: #cbd5e1;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dev-photobooth-btn.active {
+    background: rgba(168, 85, 247, 0.25);
+    border-color: rgba(168, 85, 247, 0.7);
+    color: #d8b4fe;
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+}
+
+.dev-photobooth-btn:hover {
+    filter: brightness(1.2);
+}
+
 .dev-sound-btn {
     padding: 4px 10px;
     font-size: 0.8em;
@@ -439,6 +462,26 @@ button:hover {
     border: none;
     display: block;
     pointer-events: none;
+}
+
+/* Real-time Photobooth AI Person Cutout Canvas */
+#photoboothCanvas {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100vw;
+    height: 100vh;
+    min-width: 100vw;
+    min-height: 100vh;
+    object-fit: cover;
+    z-index: 100; /* Directly above mediaDisplay (z-index: 1), below transition overlay (z-index: 2000) */
+    pointer-events: none;
+    display: none;
+}
+
+#photoboothCanvas.active {
+    display: block;
 }
 
 /* Styling for the transition video overlay */
