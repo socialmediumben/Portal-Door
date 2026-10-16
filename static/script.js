@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v4.1
+// static/script.js - Portal Door v4.2
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -36,10 +36,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let isShowingRegistration = false;
     let isMuted = false; // Default sound ON as requested
     let soundToastTimeout = null;
-
-    // Buffer for global NFC reader inputs (HID keyboard wedge)
-    let nfcBuffer = "";
-    let nfcTimeout = null;
 
     // Photobooth Mode State
     let isPhotoboothActive = false;
@@ -108,13 +104,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         showToast(isMuted ? '🔇 Sound: OFF' : '🔊 Sound: ON');
-        console.log(`[v4.1] Audio toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
+        console.log(`[v4.2] Audio toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
+    }
+
+    // --- Fullscreen Toggle ---
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn(`Fullscreen error: ${err.message}`);
+            });
+        } else {
+            document.exitFullscreen().catch(err => {
+                console.warn(`Exit fullscreen error: ${err.message}`);
+            });
+        }
     }
 
     // --- MediaPipe Selfie Segmentation Setup ---
     function initSelfieSegmentation() {
         if (typeof SelfieSegmentation === 'undefined') {
-            console.warn("[v4.1] MediaPipe SelfieSegmentation not loaded yet.");
+            console.warn("[v4.2] MediaPipe SelfieSegmentation not loaded yet.");
             return null;
         }
         if (selfieSegmentation) return selfieSegmentation;
@@ -128,53 +137,59 @@ document.addEventListener('DOMContentLoaded', () => {
                 selfieMode: true   // automatically flips video for natural mirror view
             });
             selfieSegmentation.onResults(onSelfieSegmentationResults);
-            console.log("[v4.1] MediaPipe SelfieSegmentation initialized successfully.");
+            console.log("[v4.2] MediaPipe SelfieSegmentation initialized successfully.");
             return selfieSegmentation;
         } catch (err) {
-            console.error("[v4.1] Error initializing SelfieSegmentation:", err);
+            console.error("[v4.2] Error initializing SelfieSegmentation:", err);
             return null;
         }
     }
 
     function onSelfieSegmentationResults(results) {
-        if (!photoboothCanvas || !isPhotoboothActive) return;
-        
-        // If not supposed to be visible (e.g. doors closed), do not paint
-        if (isAtHomeScreen || isShowingRegistration) return;
+        try {
+            if (!photoboothCanvas || !isPhotoboothActive) return;
+            
+            // If doors are closed or showing registration, don't paint onto the canvas
+            if (isAtHomeScreen || isShowingRegistration) return;
 
-        const ctx = photoboothCanvas.getContext('2d');
+            const ctx = photoboothCanvas.getContext('2d');
 
-        // Match canvas internal resolution to incoming video feed
-        if (photoboothCanvas.width !== results.image.width || photoboothCanvas.height !== results.image.height) {
-            photoboothCanvas.width = results.image.width;
-            photoboothCanvas.height = results.image.height;
+            // Match canvas internal resolution to incoming video feed
+            if (photoboothCanvas.width !== results.image.width || photoboothCanvas.height !== results.image.height) {
+                photoboothCanvas.width = results.image.width;
+                photoboothCanvas.height = results.image.height;
+            }
+
+            ctx.save();
+            ctx.clearRect(0, 0, photoboothCanvas.width, photoboothCanvas.height);
+
+            // 1. Draw the segmentation mask (human silhouette)
+            ctx.drawImage(results.segmentationMask, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
+
+            // 2. Composite: only draw the camera frame where the mask was drawn
+            ctx.globalCompositeOperation = 'source-in';
+            ctx.drawImage(results.image, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
+
+            ctx.restore();
+        } finally {
+            // ALWAYS reset isProcessingFrame so subsequent frames are processed without locking
+            isProcessingFrame = false;
         }
-
-        ctx.save();
-        ctx.clearRect(0, 0, photoboothCanvas.width, photoboothCanvas.height);
-
-        // 1. Draw the segmentation mask (human silhouette)
-        ctx.drawImage(results.segmentationMask, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
-
-        // 2. Composite: only draw the camera frame where the mask was drawn
-        ctx.globalCompositeOperation = 'source-in';
-        ctx.drawImage(results.image, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
-
-        ctx.restore();
-        isProcessingFrame = false;
     }
 
     async function renderPhotoboothLoop() {
         if (!isPhotoboothActive) return;
 
-        // Process frames when camera is ready
-        if (webcamVideo && webcamVideo.readyState >= 2 && !isProcessingFrame && selfieSegmentation) {
-            isProcessingFrame = true;
-            try {
-                await selfieSegmentation.send({ image: webcamVideo });
-            } catch (err) {
-                console.warn("[v4.1] Frame segmentation error:", err);
-                isProcessingFrame = false;
+        // Only run inference when media is actively playing (doors open)
+        if (!isAtHomeScreen && !isShowingRegistration) {
+            if (webcamVideo && webcamVideo.readyState >= 2 && !isProcessingFrame && selfieSegmentation) {
+                isProcessingFrame = true;
+                try {
+                    await selfieSegmentation.send({ image: webcamVideo });
+                } catch (err) {
+                    console.warn("[v4.2] Frame segmentation error:", err);
+                    isProcessingFrame = false;
+                }
             }
         }
 
@@ -217,9 +232,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderPhotoboothLoop();
 
                 showToast("📸 Photobooth Mode: ON");
-                console.log("[v4.1] Photobooth Mode activated.");
+                console.log("[v4.2] Photobooth Mode activated.");
             } catch (err) {
-                console.error("[v4.1] Failed to start Photobooth camera:", err);
+                console.error("[v4.2] Failed to start Photobooth camera:", err);
                 showToast("⚠️ Camera Error: " + (err.name || "Access Denied"));
                 isPhotoboothActive = false;
                 updatePhotoboothVisibility();
@@ -254,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             showToast("📸 Photobooth Mode: OFF");
-            console.log("[v4.1] Photobooth Mode deactivated.");
+            console.log("[v4.2] Photobooth Mode deactivated.");
         }
     }
 
@@ -341,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (idIdx === -1) {
-            console.warn(`[v4.1] No ID column found in ${sourceName} sheet.`);
+            console.warn(`[v4.2] No ID column found in ${sourceName} sheet.`);
             return db;
         }
 
@@ -385,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         row.addEventListener('click', () => {
-            console.log(`[v4.1] Preview item clicked: ${item.id}`);
+            console.log(`[v4.2] Preview item clicked: ${item.id}`);
             contentIdInput.value = item.id;
             fetchMedia(item.id);
         });
@@ -440,36 +455,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Fetch Developer Tab
         try {
-            console.log("[v4.1] Fetching 'Developer' tab from Google Sheets...");
+            console.log("[v4.2] Fetching 'Developer' tab from Google Sheets...");
             const devRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Developer&t=${Date.now()}`);
             if (devRes.ok) {
                 const text = await devRes.text();
                 developerDatabase = extractMediaFromRows(parseCSV(text), 'Developer');
                 devLoaded = true;
-                console.log(`[v4.1] Loaded ${Object.keys(developerDatabase).length} items from Developer tab.`);
+                console.log(`[v4.2] Loaded ${Object.keys(developerDatabase).length} items from Developer tab.`);
             }
         } catch (err) {
-            console.warn("[v4.1] Could not load 'Developer' tab:", err);
+            console.warn("[v4.2] Could not load 'Developer' tab:", err);
         }
 
         // Fetch Users Tab
         try {
-            console.log("[v4.1] Fetching 'Users' tab from Google Sheets...");
+            console.log("[v4.2] Fetching 'Users' tab from Google Sheets...");
             const userRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Users&t=${Date.now()}`);
             if (userRes.ok) {
                 const text = await userRes.text();
                 userDatabase = extractMediaFromRows(parseCSV(text), 'Users');
                 userLoaded = true;
-                console.log(`[v4.1] Loaded ${Object.keys(userDatabase).length} items from Users tab.`);
+                console.log(`[v4.2] Loaded ${Object.keys(userDatabase).length} items from Users tab.`);
             }
         } catch (err) {
-            console.warn("[v4.1] Could not load 'Users' tab:", err);
+            console.warn("[v4.2] Could not load 'Users' tab:", err);
         }
 
         // Fallback to local media_data.json if both tabs failed
         if (!devLoaded && !userLoaded) {
             try {
-                console.log("[v4.1] Loading local fallback from media_data.json...");
+                console.log("[v4.2] Loading local fallback from media_data.json...");
                 const response = await fetch('media_data.json');
                 if (response.ok) {
                     const mediaList = await response.json();
@@ -479,10 +494,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             developerDatabase[String(item.id).trim()] = item;
                         }
                     });
-                    console.log(`[v4.1] Loaded ${Object.keys(developerDatabase).length} items from media_data.json fallback.`);
+                    console.log(`[v4.2] Loaded ${Object.keys(developerDatabase).length} items from media_data.json fallback.`);
                 }
             } catch (jsonErr) {
-                console.error("[v4.1] Failed to load local media_data.json fallback:", jsonErr);
+                console.error("[v4.2] Failed to load local media_data.json fallback:", jsonErr);
             }
         }
 
@@ -536,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
         img.src = defaultClosedDoorUrl;
         img.alt = "Portal Door Closed";
         mediaDisplay.appendChild(img);
-        console.log("[v4.1] Home Screen active (doors closed). System ready.");
+        console.log("[v4.2] Home Screen active (doors closed). System ready.");
     }
 
     // --- Return to Home Screen (triggered by Escape key) ---
@@ -548,7 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (isAtHomeScreen) {
-            console.log("[v4.1] Already at Home Screen.");
+            console.log("[v4.2] Already at Home Screen.");
             return;
         }
 
@@ -564,11 +579,11 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.remove('visible');
 
         try {
-            console.log("[v4.1] Returning to Home Screen (closing doors)...");
+            console.log("[v4.2] Returning to Home Screen (closing doors)...");
             await playTransition(doorCloseVideoUrl);
             showHomeScreen();
         } catch (err) {
-            console.error("[v4.1] Error returning to home screen:", err);
+            console.error("[v4.2] Error returning to home screen:", err);
             showHomeScreen();
         } finally {
             transitionVideo.classList.remove('active');
@@ -636,14 +651,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!data) {
                 try {
-                    console.log(`[v4.1] Card "${cleanId}" not in memory. Checking Users sheet for fresh submissions...`);
+                    console.log(`[v4.2] Card "${cleanId}" not in memory. Checking Users sheet for fresh submissions...`);
                     const freshRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Users&t=${Date.now()}`);
                     if (freshRes.ok) {
                         const text = await freshRes.text();
                         userDatabase = extractMediaFromRows(parseCSV(text), 'Users');
                         data = userDatabase[cleanId];
                         if (data) {
-                            console.log(`[v4.1] Fresh submission found in Users tab for ID "${cleanId}"!`);
+                            console.log(`[v4.2] Fresh submission found in Users tab for ID "${cleanId}"!`);
                             renderDatasetPreview();
                         }
                     }
@@ -659,7 +674,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 3. CASE: UNREGISTERED CARD -> Open door to QR Code Registration Screen!
             if (!data) {
-                console.log(`[v4.1] Card "${cleanId}" is unregistered. Opening door to QR Code...`);
+                console.log(`[v4.2] Card "${cleanId}" is unregistered. Opening door to QR Code...`);
                 renderRegistrationScreen(cleanId);
                 isAtHomeScreen = false;
                 await playTransition(doorOpenVideoUrl);
@@ -671,13 +686,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawPath = data.file_path || '';
             const ytId = getYouTubeVideoId(rawPath);
             const resolvedPath = normalizeMediaUrl(rawPath, data.type);
-            console.log(`[v4.1] Playing card ID: ${cleanId} from [${data.source}], title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
+            console.log(`[v4.2] Playing card ID: ${cleanId} from [${data.source}], title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
 
             await new Promise((resolve, reject) => {
                 // CASE A: YouTube Video
                 if (data.type === 'youtube' || ytId) {
                     const videoId = ytId || rawPath.trim();
-                    console.log(`[v4.1] Embedding YouTube video ID: ${videoId} (Muted: ${isMuted})`);
+                    console.log(`[v4.2] Embedding YouTube video ID: ${videoId} (Muted: ${isMuted})`);
                     const iframe = document.createElement('iframe');
                     iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&loop=1&playlist=${videoId}&enablejsapi=1`;
                     iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
@@ -685,18 +700,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     iframe.title = data.title || "YouTube scene";
 
                     iframe.onload = () => {
-                        console.log(`[v4.1] YouTube iframe loaded successfully.`);
+                        console.log(`[v4.2] YouTube iframe loaded successfully.`);
                         setTimeout(resolve, 800);
                     };
                     iframe.onerror = (err) => {
-                        console.error(`[v4.1] YouTube iframe error:`, err);
+                        console.error(`[v4.2] YouTube iframe error:`, err);
                         reject(new Error("Failed to load YouTube player"));
                     };
                     mediaDisplay.appendChild(iframe);
 
                     // Safety timeout in case YouTube buffers slowly
                     setTimeout(() => {
-                        console.log(`[v4.1] Safety timeout reached, opening door.`);
+                        console.log(`[v4.2] Safety timeout reached, opening door.`);
                         resolve();
                     }, 3500);
 
@@ -728,12 +743,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     video.play().then(() => {
                         resolve();
                     }).catch(error => {
-                        console.warn("[v4.1] Autoplay error:", error);
+                        console.warn("[v4.2] Autoplay error:", error);
                         if (!video.muted) {
-                            console.log("[v4.1] Attempting playback fallback to muted...");
+                            console.log("[v4.2] Attempting playback fallback to muted...");
                             video.muted = true;
                             video.play().then(resolve).catch(err2 => {
-                                console.warn("[v4.1] Playback failed completely:", err2);
+                                console.warn("[v4.2] Playback failed completely:", err2);
                                 resolve();
                             });
                         } else {
@@ -755,7 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await playTransition(doorOpenVideoUrl);
 
         } catch (error) {
-            console.error('[v4.1] Error during media transition:', error);
+            console.error('[v4.2] Error during media transition:', error);
             mediaTitle.textContent = error.message || 'Error loading media.';
             mediaTitle.classList.add('visible');
             showHomeScreen();
@@ -767,15 +782,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Manual input event listeners ---
+    // --- Manual input button listener ---
     fetchMediaBtn.addEventListener('click', () => {
         fetchMedia(contentIdInput.value);
-    });
-
-    contentIdInput.addEventListener('keypress', (event) => {
-        if (event.key === 'Enter') {
-            fetchMedia(contentIdInput.value);
-        }
     });
 
     // Sound toggle button in Developer Mode
@@ -802,57 +811,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1500);
     }
 
-    // --- Global Keydown Listener (Hotkeys + Background NFC Scanner) ---
+    // --- Global Keypad & Keyboard Listener (Pure Keypad / NFC Navigation - No Mouse Needed) ---
+    // Rule:
+    // 1. Any digit (0-9) typed automatically routes to the search bar input.
+    // 2. Any non-digit key acts as a dedicated hotkey (never types into the search bar, even if focused).
     document.addEventListener('keydown', (event) => {
-        // Hotkey: Tab toggles Developer Mode
-        if (event.key === 'Tab') {
+        // Hotkey: * (asterisk / multiply) toggles Photobooth Mode ON/OFF
+        if (event.key === '*' || event.code === 'NumpadMultiply') {
             event.preventDefault();
-            controlsDiv.classList.toggle('visible');
-            if (controlsDiv.classList.contains('visible')) {
-                console.log("[v4.1] Developer Mode opened.");
-                renderDatasetPreview();
-                contentIdInput.focus();
-            } else {
-                console.log("[v4.1] Developer Mode closed.");
-            }
-            return;
-        }
-
-        // Hotkey: Escape returns to Home Screen (closed doors)
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            returnToHomeScreen();
+            togglePhotobooth();
             return;
         }
 
         // Hotkey: . (dot / decimal point) toggles Sound ON/OFF
         if (event.key === '.' || event.code === 'NumpadDecimal') {
-            if (document.activeElement !== contentIdInput) {
-                event.preventDefault();
-                toggleSound();
-                return;
-            }
+            event.preventDefault();
+            toggleSound();
+            return;
         }
 
-        // Hotkey: * (asterisk / multiply) toggles Photobooth Mode ON/OFF
-        if (event.key === '*' || event.code === 'NumpadMultiply') {
-            if (document.activeElement !== contentIdInput) {
-                event.preventDefault();
-                togglePhotobooth();
-                return;
+        // Hotkey: Tab toggles Developer Mode
+        if (event.key === 'Tab') {
+            event.preventDefault();
+            controlsDiv.classList.toggle('visible');
+            if (controlsDiv.classList.contains('visible')) {
+                console.log("[v4.2] Developer Mode opened.");
+                renderDatasetPreview();
+            } else {
+                console.log("[v4.2] Developer Mode closed.");
             }
+            return;
+        }
+
+        // Hotkey: Escape returns to Home Screen (closed doors) & clears input
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            contentIdInput.value = '';
+            contentIdInput.blur();
+            returnToHomeScreen();
+            return;
         }
 
         // Hotkey: ( toggles Fullscreen
         if (event.key === '(') {
             event.preventDefault();
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(err => {
-                    console.warn(`Fullscreen error: ${err.message}`);
-                });
-            } else {
-                document.exitFullscreen();
-            }
+            toggleFullscreen();
             return;
         }
 
@@ -863,26 +866,42 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // --- NFC Reader Support ---
-        if (document.activeElement !== contentIdInput) {
-            if (event.key === 'Enter') {
-                if (nfcBuffer.trim()) {
-                    const scannedId = nfcBuffer.trim();
-                    nfcBuffer = "";
-                    fetchMedia(scannedId);
-                }
-            } else if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
-                nfcBuffer += event.key;
-                clearTimeout(nfcTimeout);
-                nfcTimeout = setTimeout(() => {
-                    nfcBuffer = "";
-                }, 500);
+        // Enter triggers playback for whatever ID is in the input
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            const idToTrigger = contentIdInput.value.trim();
+            if (idToTrigger) {
+                fetchMedia(idToTrigger);
             }
+            return;
+        }
+
+        // Backspace removes last digit
+        if (event.key === 'Backspace') {
+            if (document.activeElement !== contentIdInput) {
+                event.preventDefault();
+                contentIdInput.value = contentIdInput.value.slice(0, -1);
+            }
+            return;
+        }
+
+        // DIGITS (0-9): Automatically route numbers directly into the search bar without needing mouse click
+        if (event.key >= '0' && event.key <= '9') {
+            if (document.activeElement !== contentIdInput) {
+                event.preventDefault();
+                contentIdInput.value += event.key;
+            }
+            return;
+        }
+
+        // Prevent any other non-digit key from typing into the search bar if focused
+        if (document.activeElement === contentIdInput && event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+            event.preventDefault();
         }
     });
 
     // Initial startup
-    console.log("Portal Door v4.1 initialized.");
+    console.log("Portal Door v4.2 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
