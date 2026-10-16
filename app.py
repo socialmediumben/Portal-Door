@@ -4,7 +4,7 @@ from flask import Flask, render_template, jsonify, send_from_directory
 import json
 import os
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='.', static_folder='static')
 
 # --- Load MEDIA_DATABASE from local file ---
 MEDIA_DATABASE = {}
@@ -32,6 +32,11 @@ load_media_data_from_file()
 def index():
     """Renders the main HTML page for the media viewer."""
     return render_template('index.html')
+
+@app.route('/media_data.json')
+def serve_media_data():
+    """Serves media_data.json statically."""
+    return send_from_directory('.', 'media_data.json')
 
 @app.route('/media/<string:content_id>')
 def get_media(content_id):
