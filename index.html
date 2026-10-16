@@ -4,17 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=2.2">
+    <link rel="stylesheet" href="static/style.css?v=2.3">
 </head>
 <body>
     <div class="controls">
+        <div class="dev-mode-bar">
+            <span class="dev-title"><span class="dev-indicator"></span> DEVELOPER MODE</span>
+            <span class="version-badge">v2.3</span>
+        </div>
         <div class="controls-header">
-            <span class="version-badge">v2.2</span>
-            <input type="text" id="contentIdInput" placeholder="Enter Content ID or scan card..." autocomplete="off">
+            <input type="text" id="contentIdInput" placeholder="Enter Content ID or scan NFC..." autocomplete="off">
             <button id="fetchMediaBtn">Show Media</button>
         </div>
         <div class="hotkeys-guide">
-            <div class="hotkey-item"><kbd>Tab</kbd><span>Menu</span></div>
+            <div class="hotkey-item"><kbd>Tab</kbd><span>Dev Mode</span></div>
+            <div class="hotkey-item"><kbd>Esc</kbd><span>Home Screen</span></div>
             <div class="hotkey-item"><kbd>(</kbd><span>Fullscreen</span></div>
             <div class="hotkey-item"><kbd>)</kbd><span>Reload Sheets</span></div>
             <div class="hotkey-item"><kbd>Enter</kbd><span>Trigger ID</span></div>
@@ -28,6 +32,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=2.2"></script>
+    <script src="static/script.js?v=2.3"></script>
 </body>
 </html>

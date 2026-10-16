@@ -41,6 +41,40 @@ body {
     pointer-events: auto; /* Enable interaction when visible */
 }
 
+.dev-mode-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(0, 210, 255, 0.2);
+    font-size: 0.75em;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #38bdf8;
+    text-transform: uppercase;
+}
+
+.dev-title {
+    display: flex;
+    align-items: center;
+}
+
+.dev-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #22c55e;
+    box-shadow: 0 0 8px #22c55e;
+    margin-right: 8px;
+    animation: dev-pulse 2s infinite;
+}
+
+@keyframes dev-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+}
+
 .controls-header {
     display: flex;
     align-items: center;

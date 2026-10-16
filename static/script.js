@@ -14,9 +14,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Transition animations (relative paths for GitHub Pages)
     const doorCloseVideoUrl = "static/videos/Door Close.webm";
     const doorOpenVideoUrl = "static/videos/Door Open.webm";
+    const defaultClosedDoorUrl = "static/images/Door Closed.png";
 
     let mediaDatabase = {};
     let isTransitioning = false;
+    let isAtHomeScreen = true;
 
     // Buffer for global NFC reader inputs (HID keyboard wedge)
     let nfcBuffer = "";
@@ -99,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Try Google Sheets CSV
         if (GOOGLE_SHEET_CSV_URL) {
             try {
-                console.log("[v2.2] Fetching dataset from Google Sheets...");
+                console.log("[v2.3] Fetching dataset from Google Sheets...");
                 const response = await fetch(GOOGLE_SHEET_CSV_URL);
                 if (response.ok) {
                     const csvText = await response.text();
@@ -135,17 +137,17 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
 
                                 newDb[id] = { id, title, type, file_path: rawPath };
-                                console.log(`[v2.2] Registered card "${id}": title="${title}", type="${type}", path="${rawPath}"`);
+                                console.log(`[v2.3] Registered card "${id}": title="${title}", type="${type}", path="${rawPath}"`);
                             }
                             mediaDatabase = newDb;
                             loadedFromSheet = true;
-                            console.log(`[v2.2] Successfully loaded ${Object.keys(mediaDatabase).length} media items from Google Sheets.`);
+                            console.log(`[v2.3] Successfully loaded ${Object.keys(mediaDatabase).length} media items from Google Sheets.`);
                             return true;
                         }
                     }
                 }
             } catch (sheetErr) {
-                console.warn("[v2.2] Could not load from Google Sheets (will try local fallback):", sheetErr);
+                console.warn("[v2.3] Could not load from Google Sheets (will try local fallback):", sheetErr);
             }
         }
 
@@ -206,6 +208,50 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Home Screen: Display closed doors when nothing is active ---
+    function showHomeScreen() {
+        mediaDisplay.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = defaultClosedDoorUrl;
+        img.alt = "Portal Door Closed";
+        mediaDisplay.appendChild(img);
+        isAtHomeScreen = true;
+        console.log("[v2.3] Home Screen active (doors closed). System ready.");
+    }
+
+    // --- Return to Home Screen (triggered by Escape key) ---
+    async function returnToHomeScreen() {
+        if (isTransitioning) return;
+
+        // Close Developer Mode if open
+        if (controlsDiv.classList.contains('visible')) {
+            controlsDiv.classList.remove('visible');
+        }
+
+        if (isAtHomeScreen) {
+            console.log("[v2.3] Already at Home Screen.");
+            return;
+        }
+
+        isTransitioning = true;
+        contentIdInput.value = '';
+        mediaTitle.classList.remove('visible');
+
+        try {
+            console.log("[v2.3] Returning to Home Screen (closing doors)...");
+            await playTransition(doorCloseVideoUrl);
+            showHomeScreen();
+        } catch (err) {
+            console.error("[v2.3] Error returning to home screen:", err);
+            showHomeScreen();
+        } finally {
+            transitionVideo.classList.remove('active');
+            transitionVideo.pause();
+            transitionVideo.currentTime = 0;
+            isTransitioning = false;
+        }
+    }
+
     // --- Function to fetch and display media ---
     async function fetchMedia(contentId) {
         if (isTransitioning) {
@@ -225,8 +271,10 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.remove('visible');
 
         try {
-            // 1. Play door closing animation
-            await playTransition(doorCloseVideoUrl);
+            // 1. Play door closing animation ONLY if the doors are not already closed
+            if (!isAtHomeScreen) {
+                await playTransition(doorCloseVideoUrl);
+            }
 
             // 2. Check record in database
             const data = mediaDatabase[cleanId];
@@ -235,21 +283,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!data) {
                 mediaTitle.textContent = `Media not found for ID: ${cleanId}`;
                 mediaTitle.classList.add('visible');
-                await playTransition(doorOpenVideoUrl);
+                showHomeScreen();
                 return;
             }
 
             const rawPath = data.file_path || '';
             const ytId = getYouTubeVideoId(rawPath);
             const resolvedPath = normalizeMediaUrl(rawPath, data.type);
-            console.log(`[v2.2] Playing card ID: ${cleanId}, title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
+            console.log(`[v2.3] Playing card ID: ${cleanId}, title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
 
             // 3. Load media behind the closed door
             await new Promise((resolve, reject) => {
                 // CASE A: YouTube Video
                 if (data.type === 'youtube' || ytId) {
                     const videoId = ytId || rawPath.trim();
-                    console.log(`[v2.2] Embedding YouTube video ID: ${videoId}`);
+                    console.log(`[v2.3] Embedding YouTube video ID: ${videoId}`);
                     const iframe = document.createElement('iframe');
                     iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}`;
                     iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
@@ -257,18 +305,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     iframe.title = data.title || "YouTube scene";
 
                     iframe.onload = () => {
-                        console.log(`[v2.0] YouTube iframe loaded successfully.`);
+                        console.log(`[v2.3] YouTube iframe loaded successfully.`);
                         setTimeout(resolve, 800);
                     };
                     iframe.onerror = (err) => {
-                        console.error(`[v2.0] YouTube iframe error:`, err);
+                        console.error(`[v2.3] YouTube iframe error:`, err);
                         reject(new Error("Failed to load YouTube player"));
                     };
                     mediaDisplay.appendChild(iframe);
 
                     // Safety timeout in case YouTube buffers slowly
                     setTimeout(() => {
-                        console.log(`[v2.0] Safety timeout reached, opening door.`);
+                        console.log(`[v2.3] Safety timeout reached, opening door.`);
                         resolve();
                     }, 3500);
 
@@ -318,13 +366,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             // 4. Play door opening animation to reveal new media
+            isAtHomeScreen = false;
             await playTransition(doorOpenVideoUrl);
 
         } catch (error) {
             console.error('Error during media transition:', error);
             mediaTitle.textContent = error.message || 'Error loading media.';
             mediaTitle.classList.add('visible');
-            await playTransition(doorOpenVideoUrl);
+            showHomeScreen();
         } finally {
             transitionVideo.classList.remove('active');
             transitionVideo.pause();
@@ -356,13 +405,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Global Keydown Listener (Hotkeys + Background NFC Scanner) ---
     document.addEventListener('keydown', (event) => {
-        // Hotkey: Tab toggles the manual input bar
+        // Hotkey: Tab toggles Developer Mode
         if (event.key === 'Tab') {
             event.preventDefault();
             controlsDiv.classList.toggle('visible');
             if (controlsDiv.classList.contains('visible')) {
+                console.log("[v2.3] Developer Mode opened.");
                 contentIdInput.focus();
+            } else {
+                console.log("[v2.3] Developer Mode closed.");
             }
+            return;
+        }
+
+        // Hotkey: Escape returns to Home Screen (closed doors)
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            returnToHomeScreen();
             return;
         }
 
@@ -406,8 +465,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial startup
-    console.log("Portal Door v2.2 initialized.");
+    console.log("Portal Door v2.3 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
+    showHomeScreen();
     loadMediaDatabase();
 });
