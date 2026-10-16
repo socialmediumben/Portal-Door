@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v5.3
+// static/script.js - Portal Door v5.4
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -66,6 +66,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let capturedPersonCanvas = document.createElement('canvas');
     let selectedBackdropIndex = 0;
     let loadedBackdropImages = {};
+    let activeSceneBackdrop = null; // Option "0 (Your Backdrop)" if not blocked by CORS
+    let currentBackdropsList = []; // Merged list of available backdrops
+    let captureInactivityTimeout = null;
+    const CAPTURE_TIMEOUT_MS = 90000; // 90 seconds timeout returning to home screen
 
     // Google Drive Web App Script URL (default configured from user deployment, overridable in Developer Mode)
     const DEFAULT_DRIVE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw8sI54Tsza9NwwLd-Id3DgGBg69L4N0VxwSp9d3_dryLdSB5CvmPGtPpzt2uymKRjwcQ/exec";
@@ -770,18 +774,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 // CASE B: Image
                 } else if (data.type === 'image') {
                     const img = document.createElement('img');
-                    img.src = resolvedPath;
+                    img.crossOrigin = "anonymous";
                     img.alt = data.title;
                     img.onload = () => {
                         mediaDisplay.appendChild(img);
                         resolve();
                     };
-                    img.onerror = () => reject(new Error(`Failed to load image: ${data.title}`));
-                    mediaDisplay.appendChild(img);
+                    img.onerror = () => {
+                        console.warn("[v5.4] Image failed with CORS, falling back without CORS for display:", resolvedPath);
+                        const fallback = document.createElement('img');
+                        fallback.src = resolvedPath;
+                        fallback.alt = data.title;
+                        fallback.onload = () => {
+                            mediaDisplay.appendChild(fallback);
+                            resolve();
+                        };
+                        fallback.onerror = () => reject(new Error(`Failed to load image: ${data.title}`));
+                    };
+                    img.src = resolvedPath;
 
                 // CASE C: Standard Video (MP4 / WebM / Google Drive stream)
                 } else {
                     const video = document.createElement('video');
+                    video.crossOrigin = "anonymous";
                     video.src = resolvedPath;
                     video.controls = false;
                     video.autoplay = true;
@@ -795,12 +810,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     video.play().then(() => {
                         resolve();
                     }).catch(error => {
-                        console.warn("[v5.1] Autoplay error:", error);
+                        console.warn("[v5.4] Autoplay error:", error);
                         if (!video.muted) {
-                            console.log("[v5.1] Attempting playback fallback to muted...");
+                            console.log("[v5.4] Attempting playback fallback to muted...");
                             video.muted = true;
                             video.play().then(resolve).catch(err2 => {
-                                console.warn("[v5.1] Playback failed completely:", err2);
+                                console.warn("[v5.4] Playback failed completely:", err2);
                                 resolve();
                             });
                         } else {
@@ -808,7 +823,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
 
-                    video.onerror = () => reject(new Error(`Failed to load video: ${data.title}`));
+                    video.onerror = () => {
+                        if (video.crossOrigin) {
+                            console.warn("[v5.4] Video failed with CORS, retrying without CORS:", resolvedPath);
+                            video.removeAttribute('crossOrigin');
+                            video.load();
+                            return;
+                        }
+                        reject(new Error(`Failed to load video: ${data.title}`));
+                    };
                 }
             });
 
@@ -862,6 +885,125 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Renders the combined composite on #captureCanvas
+    // --- Inactivity Timeout for Photobooth Capture Module (90 seconds) ---
+    function startCaptureInactivityTimer() {
+        clearCaptureInactivityTimer();
+        captureInactivityTimeout = setTimeout(async () => {
+            if (isCaptureModalOpen) {
+                console.log("[v5.4] 90s Photobooth inactivity timeout reached. Returning to Home Screen.");
+                showToast("Returning Home");
+                closeCaptureModal();
+                await returnToHomeScreen();
+            }
+        }, CAPTURE_TIMEOUT_MS);
+    }
+
+    function resetCaptureInactivityTimer() {
+        if (isCaptureModalOpen) {
+            startCaptureInactivityTimer();
+        }
+    }
+
+    function clearCaptureInactivityTimer() {
+        if (captureInactivityTimeout) {
+            clearTimeout(captureInactivityTimeout);
+            captureInactivityTimeout = null;
+        }
+    }
+
+    // --- Media Playback Control for Photobooth Pause/Resume ---
+    function pauseActiveMedia() {
+        const video = mediaDisplay.querySelector('video');
+        if (video && !video.paused) {
+            video.pause();
+            console.log("[v5.4] Paused active video playback for photo countdown.");
+        }
+        const iframe = mediaDisplay.querySelector('iframe');
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+            console.log("[v5.4] Sent pause to active YouTube video for photo countdown.");
+        }
+    }
+
+    function resumeActiveMedia() {
+        if (isAtHomeScreen || isShowingRegistration) return;
+        const video = mediaDisplay.querySelector('video');
+        if (video && video.paused) {
+            video.play().catch(e => console.warn("[v5.4] Failed to resume video:", e));
+        }
+        const iframe = mediaDisplay.querySelector('iframe');
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+        }
+    }
+
+    // Capture current active media as Option "0 (Your Backdrop)" if not blocked by CORS
+    function getActiveSceneBackdrop() {
+        if (!mediaDisplay || isAtHomeScreen || isShowingRegistration) return null;
+
+        // 1. Try capturing current frozen frame from HTML5 <video>
+        const video = mediaDisplay.querySelector('video');
+        if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1080;
+                canvas.height = 1620;
+                const ctx = canvas.getContext('2d');
+                const ratio = Math.max(1080 / video.videoWidth, 1620 / video.videoHeight);
+                const drawW = video.videoWidth * ratio;
+                const drawH = video.videoHeight * ratio;
+                ctx.drawImage(video, (1080 - drawW) / 2, (1620 - drawH) / 2, drawW, drawH);
+
+                // Crucial test: verify canvas is origin-clean (not tainted by cross-origin video)
+                const testDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+                console.log("[v5.4] Successfully captured active video frame as Option '0 (Your Backdrop)'.");
+                return {
+                    id: '0',
+                    title: 'Your Backdrop',
+                    file_path: testDataUrl,
+                    type: 'image',
+                    isSceneBackdrop: true,
+                    _cachedCanvas: canvas
+                };
+            } catch (err) {
+                console.warn("[v5.4] Active video blocked by CORS for backdrop:", err);
+            }
+        }
+
+        // 2. Try capturing from <img>
+        const img = mediaDisplay.querySelector('img');
+        if (img && img.complete && img.naturalWidth > 0) {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1080;
+                canvas.height = 1620;
+                const ctx = canvas.getContext('2d');
+                const ratio = Math.max(1080 / img.naturalWidth, 1620 / img.naturalHeight);
+                const drawW = img.naturalWidth * ratio;
+                const drawH = img.naturalHeight * ratio;
+                ctx.drawImage(img, (1080 - drawW) / 2, (1620 - drawH) / 2, drawW, drawH);
+
+                // Crucial test: verify canvas is origin-clean
+                const testDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+                console.log("[v5.4] Successfully captured active image as Option '0 (Your Backdrop)'.");
+                return {
+                    id: '0',
+                    title: 'Your Backdrop',
+                    file_path: testDataUrl,
+                    type: 'image',
+                    isSceneBackdrop: true,
+                    _cachedCanvas: canvas
+                };
+            } catch (err) {
+                console.warn("[v5.4] Active image blocked by CORS for backdrop:", err);
+            }
+        }
+
+        console.log("[v5.4] Active media cannot be captured as backdrop (e.g. YouTube iframe or cross-origin).");
+        return null;
+    }
+
+    // Renders the combined composite on #captureCanvas
     async function renderCompositeCapture() {
         if (!captureCanvas) return;
         const ctx = captureCanvas.getContext('2d');
@@ -878,22 +1020,29 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Draw Backdrop
         let backdropDrawn = false;
         let backdropTitle = "Sci-Fi Portal";
-        if (photoboothBackdrops.length > 0 && photoboothBackdrops[selectedBackdropIndex]) {
-            const item = photoboothBackdrops[selectedBackdropIndex];
+        if (currentBackdropsList.length > 0 && currentBackdropsList[selectedBackdropIndex]) {
+            const item = currentBackdropsList[selectedBackdropIndex];
             backdropTitle = item.title || "Portal";
-            const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
-            const img = await preloadImage(resolvedUrl);
-            if (img && img._corsSafe) {
-                // Draw image scaled to cover the portrait canvas
-                const hRatio = width / img.width;
-                const vRatio = height / img.height;
-                const ratio = Math.max(hRatio, vRatio);
-                const centerShiftX = (width - img.width * ratio) / 2;
-                const centerShiftY = (height - img.height * ratio) / 2;
-                ctx.drawImage(img, 0, 0, img.width, img.height, centerShiftX, centerShiftY, img.width * ratio, img.height * ratio);
+
+            if (item.isSceneBackdrop && item._cachedCanvas) {
+                // Pre-captured clean canvas frame
+                ctx.drawImage(item._cachedCanvas, 0, 0, width, height);
                 backdropDrawn = true;
-            } else if (img === null) {
-                console.warn(`[v5.3] Backdrop "${item.title}" blocked by host CORS policy. Using portal theme.`);
+            } else {
+                const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
+                const img = await preloadImage(resolvedUrl);
+                if (img && img._corsSafe) {
+                    // Draw image scaled to cover the portrait canvas
+                    const hRatio = width / img.width;
+                    const vRatio = height / img.height;
+                    const ratio = Math.max(hRatio, vRatio);
+                    const centerShiftX = (width - img.width * ratio) / 2;
+                    const centerShiftY = (height - img.height * ratio) / 2;
+                    ctx.drawImage(img, 0, 0, img.width, img.height, centerShiftX, centerShiftY, img.width * ratio, img.height * ratio);
+                    backdropDrawn = true;
+                } else if (img === null) {
+                    console.warn(`[v5.4] Backdrop "${item.title}" blocked by host CORS policy. Using portal theme.`);
+                }
             }
         }
 
@@ -973,13 +1122,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!backdropSelectorBar) return;
         backdropSelectorBar.innerHTML = '';
 
-        photoboothBackdrops.forEach((item, index) => {
+        currentBackdropsList.forEach((item, index) => {
             const pill = document.createElement('div');
             pill.className = `backdrop-pill ${index === selectedBackdropIndex ? 'selected' : ''}`;
+            const keyDigit = item.id === '0' ? '0' : String(item.id || (index + (activeSceneBackdrop ? 0 : 1)));
             const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
-            const isCorsBlocked = loadedBackdropImages[resolvedUrl] === null;
+            const isCorsBlocked = !item.isSceneBackdrop && loadedBackdropImages[resolvedUrl] === null;
             const tag = isCorsBlocked ? ' ⚠️' : '';
-            pill.innerHTML = `<kbd>${index + 1}</kbd> <span>${item.title}${tag}</span>`;
+            pill.innerHTML = `<kbd>${keyDigit}</kbd> <span>${item.title}${tag}</span>`;
             pill.addEventListener('click', () => {
                 selectBackdrop(index);
             });
@@ -988,16 +1138,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function selectBackdrop(index) {
-        if (index < 0 || index >= photoboothBackdrops.length) return;
+        if (index < 0 || index >= currentBackdropsList.length) return;
         selectedBackdropIndex = index;
         renderBackdropSelectorPills();
         renderCompositeCapture();
-        const item = photoboothBackdrops[index];
-        const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
-        if (loadedBackdropImages[resolvedUrl] === null) {
-            showToast(`⚠️ "${item.title}" host blocks direct export. Cyber portal used!`);
+        resetCaptureInactivityTimer();
+
+        const item = currentBackdropsList[index];
+        if (!item.isSceneBackdrop) {
+            const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
+            if (loadedBackdropImages[resolvedUrl] === null) {
+                showToast(`⚠️ "${item.title}" host blocks direct export. Cyber portal used!`);
+            }
         }
-        console.log(`[v5.2] Switched to backdrop #${index + 1}: ${item?.title}`);
+        console.log(`[v5.4] Switched to backdrop #${index} (${item.title})`);
     }
 
     // Close the capture modal and return to portal view
@@ -1006,6 +1160,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isCountingDown = false;
         isUploadingPhoto = false;
         isPhotoUploaded = false;
+        clearCaptureInactivityTimer();
 
         if (captureModal) captureModal.classList.remove('active');
         if (captureSpinner) captureSpinner.classList.remove('active');
@@ -1014,11 +1169,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (captureCountdown) captureCountdown.classList.remove('active');
 
         updatePhotoboothVisibility();
+        resumeActiveMedia();
     }
 
     // Start 3-2-1 Countdown and Snapshot
     async function startPhotoCountdown() {
         if (isCountingDown || isCaptureModalOpen) return;
+
+        // Pause media immediately where it is
+        pauseActiveMedia();
 
         // If photobooth is not on yet, turn it on first
         if (!isPhotoboothActive) {
@@ -1059,10 +1218,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     pCtx.drawImage(photoboothCanvas, 0, 0);
                 }
 
+                // Check and build available backdrops: Option 0 (Your Backdrop) if available
+                activeSceneBackdrop = getActiveSceneBackdrop();
+                if (activeSceneBackdrop) {
+                    currentBackdropsList = [activeSceneBackdrop, ...photoboothBackdrops];
+                } else {
+                    currentBackdropsList = [...photoboothBackdrops];
+                }
+                selectedBackdropIndex = 0; // Automatically select Option 0 (or first available backdrop)
+
                 isCountingDown = false;
                 isCaptureModalOpen = true;
                 isPhotoUploaded = false;
-                selectedBackdropIndex = 0;
 
                 // Open Capture Modal
                 captureModal.classList.add('active');
@@ -1073,7 +1240,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderBackdropSelectorPills();
                 await renderCompositeCapture();
 
-                console.log("[v5.1] Photo captured. Backdrop selection ready.");
+                // Start 90-second inactivity timeout
+                startCaptureInactivityTimer();
+
+                console.log(`[v5.4] Photo captured. Backdrop selection ready (${currentBackdropsList.length} options).`);
             }
         }, 1000);
     }
@@ -1251,7 +1421,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', (event) => {
         // --- 1. CAPTURE MODAL ACTIVE NAVIGATION ---
         if (isCaptureModalOpen) {
-            // Esc closes the modal
+            resetCaptureInactivityTimer();
+
+            // Esc closes the modal and resumes media
             if (event.key === 'Escape') {
                 event.preventDefault();
                 closeCaptureModal();
@@ -1265,11 +1437,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Numbers 1-9 switch backdrops instantly
+            // Key 0 selects Option "0 (Your Backdrop)" if present
+            if (event.key === '0') {
+                event.preventDefault();
+                if (activeSceneBackdrop) {
+                    selectBackdrop(0);
+                }
+                return;
+            }
+
+            // Numbers 1-9 switch backdrops
             if (event.key >= '1' && event.key <= '9') {
                 event.preventDefault();
-                const index = parseInt(event.key, 10) - 1;
-                selectBackdrop(index);
+                const num = parseInt(event.key, 10);
+                const targetIdx = activeSceneBackdrop ? num : (num - 1);
+                if (targetIdx < currentBackdropsList.length) {
+                    selectBackdrop(targetIdx);
+                }
                 return;
             }
 
@@ -1369,8 +1553,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Reset inactivity timer on screen touches or clicks inside capture modal
+    if (captureModal) {
+        captureModal.addEventListener('pointerdown', resetCaptureInactivityTimer);
+    }
+
     // Initial startup
-    console.log("Portal Door v5.3 initialized.");
+    console.log("Portal Door v5.4 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
