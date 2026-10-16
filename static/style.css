@@ -20,21 +20,62 @@ body {
     left: 50%;
     transform: translateX(-50%);
     z-index: 1000; /* Ensure controls are on top of media */
-    background: rgba(0, 0, 0, 0.7); /* Semi-transparent black background */
-    padding: 10px 20px;
-    border-radius: 8px;
+    background: rgba(12, 18, 30, 0.88); /* Translucent dark background */
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 210, 255, 0.3);
+    padding: 12px 18px;
+    border-radius: 10px;
     display: flex;
+    flex-direction: column;
     gap: 10px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-    opacity: 0; /* Start with opacity 0 to hide it */
-    pointer-events: none; /* Prevent interaction when hidden */
-    transition: opacity 0.3s ease-in-out; /* Add a smooth transition */
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 12px rgba(0, 210, 255, 0.15);
+    opacity: 0; /* Start hidden */
+    pointer-events: none;
+    transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
 }
 
 /* Add a class to make it visible */
 .controls.visible {
     opacity: 1;
     pointer-events: auto; /* Enable interaction when visible */
+}
+
+.controls-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.hotkeys-guide {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 0.8em;
+    color: #94a3b8;
+}
+
+.hotkey-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+
+kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    font-family: monospace;
+    font-size: 0.9em;
+    font-weight: bold;
+    color: #00d2ff;
+    background: rgba(0, 210, 255, 0.12);
+    border: 1px solid rgba(0, 210, 255, 0.35);
+    border-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .version-badge {
@@ -52,94 +93,122 @@ body {
 }
 
 input[type="text"] {
-    padding: 8px;
-    border: 1px solid #555;
+    padding: 8px 12px;
+    border: 1px solid #475569;
     border-radius: 4px;
-    background-color: #333;
+    background-color: #1e293b;
     color: #fff;
     font-size: 1em;
-    width: 200px;
+    width: 240px;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    border-color: #00d2ff;
+    box-shadow: 0 0 8px rgba(0, 210, 255, 0.4);
 }
 
 button {
     padding: 8px 15px;
-    background-color: #007bff;
+    background-color: #0284c7;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
     font-size: 1em;
+    font-weight: 500;
     transition: background-color 0.2s ease;
 }
 
 button:hover {
-    background-color: #0056b3;
+    background-color: #0369a1;
 }
 
 .media-container {
     width: 100vw; /* Take full viewport width */
     height: 100vh; /* Take full viewport height */
     display: flex;
-    flex-direction: column; /* Stack title above media */
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    position: relative; /* For positioning media elements */
+    position: relative;
+    overflow: hidden;
 }
 
 #mediaTitle {
     position: absolute;
-    top: 100px; /* Adjust as needed to be below controls */
+    top: 100px;
     font-size: 2em;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
     z-index: 999; /* Below controls, above media */
-    opacity: 0; /* Start with opacity 0 to hide it */
-    transition: opacity 0.3s ease-in-out; /* Add a smooth transition for fading */
-    pointer-events: none; /* Prevent it from interfering with clicks/taps on media */
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    pointer-events: none;
 }
 
-/* Add a class to make it visible */
 #mediaTitle.visible {
     opacity: 1;
 }
 
 #mediaDisplay {
-    width: 100%;
-    height: 100%;
+    position: relative;
+    width: 100vw;
+    height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden; /* Hide any overflow from the media */
-    /* REMOVED: opacity and transition from here */
+    overflow: hidden; /* Crops excess on the sides */
 }
 
-/* REMOVED: #mediaDisplay.media-display-active class */
-
+/* Ensure native videos and images always fill 100% of vertical height and crop sides */
 #mediaDisplay img,
-#mediaDisplay video,
-#mediaDisplay iframe {
-    width: 100vw; /* Forces the media to take 100% of viewport width */
-    height: 100vh; /* Forces the media to take 100% of viewport height */
-    object-fit: cover; /* Ensures the entire media fills the container, cropping if necessary */
+#mediaDisplay video {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    min-width: 100vw;
+    min-height: 100vh;
+    object-fit: cover; /* Fills vertically and horizontally, cropping overflow */
+    object-position: center;
     border: none;
-    display: block; /* Remove extra space below images/videos */
-    pointer-events: none; /* Prevent accidental clicks pausing background video */
+    display: block;
+    pointer-events: none;
+}
+
+/* Force YouTube 16:9 iframe to fill the screen vertically and crop on the sides */
+#mediaDisplay iframe {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100vw;
+    height: 100vh;
+    min-width: 177.78vh; /* 100vh * (16 / 9) - forces full vertical coverage */
+    min-height: 56.25vw; /* 100vw * (9 / 16) - forces full horizontal coverage */
+    border: none;
+    display: block;
+    pointer-events: none;
 }
 
 /* Styling for the transition video overlay */
 .transition-overlay {
-    position: fixed; /* Fixed to the viewport */
+    position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
-    object-fit: cover; /* Cover the entire screen, cropping if necessary */
-    z-index: 2000; /* Ensure it's above everything else (controls are 1000, title is 999) */
-    opacity: 0; /* Initially hidden */
-    visibility: hidden; /* Also hidden from accessibility tree and layout */
-    transition: opacity 0.3s ease-in-out; /* Smooth fade effect */
+    object-fit: cover; /* Cover the entire screen vertically & horizontally */
+    object-position: center;
+    z-index: 2000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease-in-out;
 }
 
 .transition-overlay.active {
-    opacity: 1; /* Fully visible */
-    visibility: visible; /* Make it visible */
+    opacity: 1;
+    visibility: visible;
 }

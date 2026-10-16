@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Try Google Sheets CSV
         if (GOOGLE_SHEET_CSV_URL) {
             try {
-                console.log("[v2.1] Fetching dataset from Google Sheets...");
+                console.log("[v2.2] Fetching dataset from Google Sheets...");
                 const response = await fetch(GOOGLE_SHEET_CSV_URL);
                 if (response.ok) {
                     const csvText = await response.text();
@@ -135,17 +135,17 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
 
                                 newDb[id] = { id, title, type, file_path: rawPath };
-                                console.log(`[v2.1] Registered card "${id}": title="${title}", type="${type}", path="${rawPath}"`);
+                                console.log(`[v2.2] Registered card "${id}": title="${title}", type="${type}", path="${rawPath}"`);
                             }
                             mediaDatabase = newDb;
                             loadedFromSheet = true;
-                            console.log(`[v2.1] Successfully loaded ${Object.keys(mediaDatabase).length} media items from Google Sheets.`);
+                            console.log(`[v2.2] Successfully loaded ${Object.keys(mediaDatabase).length} media items from Google Sheets.`);
                             return true;
                         }
                     }
                 }
             } catch (sheetErr) {
-                console.warn("[v2.1] Could not load from Google Sheets (will try local fallback):", sheetErr);
+                console.warn("[v2.2] Could not load from Google Sheets (will try local fallback):", sheetErr);
             }
         }
 
@@ -242,14 +242,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawPath = data.file_path || '';
             const ytId = getYouTubeVideoId(rawPath);
             const resolvedPath = normalizeMediaUrl(rawPath, data.type);
-            console.log(`[v2.1] Playing card ID: ${cleanId}, title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
+            console.log(`[v2.2] Playing card ID: ${cleanId}, title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
 
             // 3. Load media behind the closed door
             await new Promise((resolve, reject) => {
                 // CASE A: YouTube Video
                 if (data.type === 'youtube' || ytId) {
                     const videoId = ytId || rawPath.trim();
-                    console.log(`[v2.1] Embedding YouTube video ID: ${videoId}`);
+                    console.log(`[v2.2] Embedding YouTube video ID: ${videoId}`);
                     const iframe = document.createElement('iframe');
                     iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}`;
                     iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
@@ -406,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial startup
-    console.log("Portal Door v2.1 initialized.");
+    console.log("Portal Door v2.2 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     loadMediaDatabase();
