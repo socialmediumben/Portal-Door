@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v5.6
+// static/script.js - Portal Door v5.7
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -1813,7 +1813,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial startup
-    console.log("Portal Door v5.6 initialized.");
+    console.log("Portal Door v5.7 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();

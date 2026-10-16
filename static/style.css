@@ -1004,7 +1004,7 @@ button:hover {
 
 .gallery-cards-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 14px;
     max-height: 64vh;
     overflow-y: auto;
@@ -1036,7 +1036,7 @@ button:hover {
 .gallery-thumb-wrapper {
     position: relative;
     width: 100%;
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 2 / 3; /* Portrait aspect ratio matching vertical screen & portal display */
     background: #000;
     overflow: hidden;
     display: flex;
@@ -1048,6 +1048,7 @@ button:hover {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center;
     display: block;
     transition: transform 0.3s ease;
 }
