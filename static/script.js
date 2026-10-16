@@ -63,7 +63,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Helper: Extract YouTube ID ---
     function getYouTubeVideoId(url) {
         if (!url) return null;
-        const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+        const clean = String(url).trim();
+        if (/^[a-zA-Z0-9_-]{11}$/.test(clean)) return clean;
+        const match = clean.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([a-zA-Z0-9_-]{11})/);
         return match ? match[1] : null;
     }
 
@@ -238,23 +240,29 @@ document.addEventListener('DOMContentLoaded', () => {
             await new Promise((resolve, reject) => {
                 // CASE A: YouTube Video
                 if (data.type === 'youtube' || ytId) {
-                    const videoId = ytId || rawPath;
+                    const videoId = ytId || rawPath.trim();
+                    console.log(`[v2.0] Embedding YouTube video ID: ${videoId}`);
                     const iframe = document.createElement('iframe');
-                    const origin = window.location.origin && window.location.origin !== "null" ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
-                    iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}&enablejsapi=1${origin}`;
-                    iframe.referrerPolicy = "strict-origin-when-cross-origin";
+                    iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}`;
                     iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
                     iframe.allowFullscreen = true;
+                    iframe.title = data.title || "YouTube scene";
 
-                    // Reveal door after iframe loads + small buffer delay
                     iframe.onload = () => {
+                        console.log(`[v2.0] YouTube iframe loaded successfully.`);
                         setTimeout(resolve, 800);
                     };
-                    iframe.onerror = () => reject(new Error("Failed to load YouTube player"));
+                    iframe.onerror = (err) => {
+                        console.error(`[v2.0] YouTube iframe error:`, err);
+                        reject(new Error("Failed to load YouTube player"));
+                    };
                     mediaDisplay.appendChild(iframe);
 
                     // Safety timeout in case YouTube buffers slowly
-                    setTimeout(resolve, 3500);
+                    setTimeout(() => {
+                        console.log(`[v2.0] Safety timeout reached, opening door.`);
+                        resolve();
+                    }, 3500);
 
                 // CASE B: Image
                 } else if (data.type === 'image') {
@@ -390,6 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial startup
+    console.log("Portal Door v2.0 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     loadMediaDatabase();

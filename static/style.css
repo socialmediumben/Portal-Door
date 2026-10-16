@@ -37,6 +37,20 @@ body {
     pointer-events: auto; /* Enable interaction when visible */
 }
 
+.version-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    font-size: 0.85em;
+    font-weight: bold;
+    color: #00d2ff;
+    background: rgba(0, 210, 255, 0.15);
+    border: 1px solid rgba(0, 210, 255, 0.4);
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    user-select: none;
+}
+
 input[type="text"] {
     padding: 8px;
     border: 1px solid #555;
