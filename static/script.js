@@ -1,4 +1,4 @@
-// static/script.js
+// static/script.js - Portal Door v3.0
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -10,16 +10,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const soundToggleBtn = document.getElementById('soundToggleBtn');
     const soundToast = document.getElementById('soundToast');
     const devDatasetList = document.getElementById('devDatasetList');
+    const devDatasetTitle = document.getElementById('devDatasetTitle');
 
-    // Google Sheet CSV export link
-    const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/gviz/tq?tqx=out:csv";
+    // Google Sheet CSV export base URL (spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0)
+    const GOOGLE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/gviz/tq?tqx=out:csv";
+    
+    // Google Form configuration for public registration
+    const GOOGLE_FORM_BASE_URL = "https://docs.google.com/forms/d/e/1FAIpQLScFQcRKtZrXRn6aq8VsziutGSDhlWCKP0TImaFJ1df7h8w3ew/viewform";
+    const GOOGLE_FORM_ID_ENTRY = "entry.1513595288"; // Field ID for pre-filling card ID
+    const GOOGLE_FORM_SHORT_URL = "https://forms.gle/GBZC6SYXSZS1ZFjM8";
 
     // Transition animations (relative paths for GitHub Pages)
     const doorCloseVideoUrl = "static/videos/Door Close.webm";
     const doorOpenVideoUrl = "static/videos/Door Open.webm";
     const defaultClosedDoorUrl = "static/images/Door Closed.png";
 
-    let mediaDatabase = {};
+    // Datasets
+    let developerDatabase = {};
+    let userDatabase = {};
     let isTransitioning = false;
     let isAtHomeScreen = true;
     let isMuted = false; // Default sound ON as requested
@@ -73,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 1500);
         }
 
-        console.log(`[v2.5] Audio toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
+        console.log(`[v3.0] Audio toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
     }
 
     // --- Helper: Robust CSV parser ---
@@ -146,122 +154,169 @@ document.addEventListener('DOMContentLoaded', () => {
         return clean;
     }
 
-    // --- Render Dataset Preview in Developer Mode (First 10 items) ---
+    // --- Helper: Map CSV rows into database object ---
+    function extractMediaFromRows(rows, sourceName) {
+        const db = {};
+        if (!rows || rows.length < 2) return db;
+
+        let idIdx = -1, titleIdx = -1, typeIdx = -1, pathIdx = -1;
+        for (let i = 0; i < rows[0].length; i++) {
+            const norm = rows[0][i].toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (['id', 'contentid', 'cardid', 'uid'].includes(norm)) idIdx = i;
+            else if (['title', 'name'].includes(norm)) titleIdx = i;
+            else if (['type', 'mediatype'].includes(norm)) typeIdx = i;
+            else if (norm.includes('path') || norm.includes('file') || norm.includes('url') || norm.includes('link') || norm.includes('media')) pathIdx = i;
+        }
+
+        if (idIdx === -1) {
+            console.warn(`[v3.0] No ID column found in ${sourceName} sheet.`);
+            return db;
+        }
+
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            const rawId = row[idIdx];
+            if (!rawId) continue;
+
+            const id = String(rawId).trim();
+            const title = titleIdx !== -1 && row[titleIdx] ? row[titleIdx].trim() : id;
+            const rawPath = pathIdx !== -1 && row[pathIdx] ? row[pathIdx].trim() : '';
+            let type = typeIdx !== -1 && row[typeIdx] ? row[typeIdx].trim().toLowerCase() : '';
+
+            // Normalize type string
+            if (type.includes('youtube')) type = 'youtube';
+            else if (type.includes('image') || type.includes('photo')) type = 'image';
+            else if (type.includes('video')) type = 'video';
+            else if (!type) {
+                if (getYouTubeVideoId(rawPath)) type = 'youtube';
+                else if (/\.(jpe?g|png|webp|gif)($|\?)/i.test(rawPath)) type = 'image';
+                else type = 'video';
+            }
+
+            db[id] = { id, title, type, file_path: rawPath, source: sourceName };
+        }
+
+        return db;
+    }
+
+    // --- Helper: Create preview row element ---
+    function createDatasetRow(item, sourceTag) {
+        const row = document.createElement('div');
+        row.className = 'dev-dataset-item';
+        row.title = `Click to test ID: ${item.id} (${item.source || sourceTag})`;
+
+        const badgeClass = item.type === 'youtube' ? 'badge-youtube' : (item.type === 'image' ? 'badge-image' : 'badge-video');
+
+        row.innerHTML = `
+            <span class="dev-item-id">${item.id}</span>
+            <span class="dev-item-name" title="${item.title || item.file_path}">${item.title || item.file_path || 'Untitled'}</span>
+            <span class="dev-item-badge ${badgeClass}">${item.type || 'media'}</span>
+        `;
+
+        row.addEventListener('click', () => {
+            console.log(`[v3.0] Preview item clicked: ${item.id}`);
+            contentIdInput.value = item.id;
+            fetchMedia(item.id);
+        });
+
+        return row;
+    }
+
+    // --- Render Dataset Preview in Developer Mode (Full Developer Tab + User Submissions) ---
     function renderDatasetPreview() {
         if (!devDatasetList) return;
 
-        const items = Object.values(mediaDatabase).slice(0, 10);
-        if (items.length === 0) {
+        const devItems = Object.values(developerDatabase);
+        const userItems = Object.values(userDatabase);
+
+        if (devDatasetTitle) {
+            devDatasetTitle.textContent = `Developer Tab (${devItems.length} items):`;
+        }
+
+        if (devItems.length === 0 && userItems.length === 0) {
             devDatasetList.innerHTML = '<div class="dev-dataset-empty">No items loaded. Check Google Sheet link or internet.</div>';
             return;
         }
 
         devDatasetList.innerHTML = '';
-        items.forEach((item) => {
-            const row = document.createElement('div');
-            row.className = 'dev-dataset-item';
-            row.title = `Click to test ID: ${item.id}`;
 
-            const badgeClass = item.type === 'youtube' ? 'badge-youtube' : (item.type === 'image' ? 'badge-image' : 'badge-video');
-
-            row.innerHTML = `
-                <span class="dev-item-id">${item.id}</span>
-                <span class="dev-item-name" title="${item.title || item.file_path}">${item.title || item.file_path || 'Untitled'}</span>
-                <span class="dev-item-badge ${badgeClass}">${item.type || 'media'}</span>
-            `;
-
-            row.addEventListener('click', () => {
-                console.log(`[v2.5] Preview item clicked: ${item.id}`);
-                contentIdInput.value = item.id;
-                fetchMedia(item.id);
-            });
-
-            devDatasetList.appendChild(row);
+        // 1. Render FULL dataset from Developer tab
+        devItems.forEach((item) => {
+            devDatasetList.appendChild(createDatasetRow(item, 'Developer'));
         });
+
+        // 2. If User-submitted items exist, render them below with a divider
+        if (userItems.length > 0) {
+            const userDivider = document.createElement('div');
+            userDivider.className = 'dev-dataset-header';
+            userDivider.style.marginTop = '10px';
+            userDivider.innerHTML = `
+                <span>Users Tab (${userItems.length} submissions):</span>
+                <span class="dev-dataset-subtext">From Google Form</span>
+            `;
+            devDatasetList.appendChild(userDivider);
+
+            userItems.forEach((item) => {
+                devDatasetList.appendChild(createDatasetRow(item, 'Users'));
+            });
+        }
     }
 
-    // --- Load media database (Google Sheet with JSON fallback) ---
+    // --- Load media database from both "Developer" and "Users" Google Sheet tabs ---
     async function loadMediaDatabase() {
-        let loadedFromSheet = false;
+        let devLoaded = false;
+        let userLoaded = false;
 
-        // 1. Try Google Sheets CSV
-        if (GOOGLE_SHEET_CSV_URL) {
-            try {
-                console.log("[v2.5] Fetching dataset from Google Sheets...");
-                const response = await fetch(GOOGLE_SHEET_CSV_URL);
-                if (response.ok) {
-                    const csvText = await response.text();
-                    const rows = parseCSV(csvText);
-
-                    if (rows.length >= 2) {
-                        let idIdx = -1, titleIdx = -1, typeIdx = -1, pathIdx = -1;
-                        for (let i = 0; i < rows[0].length; i++) {
-                            const norm = rows[0][i].toLowerCase().replace(/[^a-z0-9]/g, '');
-                            if (['id', 'contentid', 'cardid', 'uid'].includes(norm)) idIdx = i;
-                            else if (['title', 'name'].includes(norm)) titleIdx = i;
-                            else if (['type', 'mediatype'].includes(norm)) typeIdx = i;
-                            else if (norm.includes('path') || norm.includes('file') || norm.includes('url') || norm.includes('link') || norm.includes('media')) pathIdx = i;
-                        }
-
-                        if (idIdx !== -1) {
-                            const newDb = {};
-                            for (let i = 1; i < rows.length; i++) {
-                                const row = rows[i];
-                                const rawId = row[idIdx];
-                                if (!rawId) continue;
-
-                                const id = String(rawId).trim();
-                                const title = titleIdx !== -1 && row[titleIdx] ? row[titleIdx].trim() : id;
-                                const rawPath = pathIdx !== -1 && row[pathIdx] ? row[pathIdx].trim() : '';
-                                let type = typeIdx !== -1 && row[typeIdx] ? row[typeIdx].trim().toLowerCase() : '';
-
-                                // Auto-detect type if omitted
-                                if (!type) {
-                                    if (getYouTubeVideoId(rawPath)) type = 'youtube';
-                                    else if (/\.(jpe?g|png|webp|gif)($|\?)/i.test(rawPath)) type = 'image';
-                                    else type = 'video';
-                                }
-
-                                newDb[id] = { id, title, type, file_path: rawPath };
-                                console.log(`[v2.5] Registered card "${id}": title="${title}", type="${type}", path="${rawPath}"`);
-                            }
-                            mediaDatabase = newDb;
-                            loadedFromSheet = true;
-                            console.log(`[v2.5] Successfully loaded ${Object.keys(mediaDatabase).length} media items from Google Sheets.`);
-                            renderDatasetPreview();
-                            return true;
-                        }
-                    }
-                }
-            } catch (sheetErr) {
-                console.warn("[v2.5] Could not load from Google Sheets (will try local fallback):", sheetErr);
+        // Fetch Developer Tab
+        try {
+            console.log("[v3.0] Fetching 'Developer' tab from Google Sheets...");
+            const devRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Developer&t=${Date.now()}`);
+            if (devRes.ok) {
+                const text = await devRes.text();
+                developerDatabase = extractMediaFromRows(parseCSV(text), 'Developer');
+                devLoaded = true;
+                console.log(`[v3.0] Loaded ${Object.keys(developerDatabase).length} items from Developer tab.`);
             }
+        } catch (err) {
+            console.warn("[v3.0] Could not load 'Developer' tab:", err);
         }
 
-        // 2. Fallback to local media_data.json
-        if (!loadedFromSheet) {
+        // Fetch Users Tab
+        try {
+            console.log("[v3.0] Fetching 'Users' tab from Google Sheets...");
+            const userRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Users&t=${Date.now()}`);
+            if (userRes.ok) {
+                const text = await userRes.text();
+                userDatabase = extractMediaFromRows(parseCSV(text), 'Users');
+                userLoaded = true;
+                console.log(`[v3.0] Loaded ${Object.keys(userDatabase).length} items from Users tab.`);
+            }
+        } catch (err) {
+            console.warn("[v3.0] Could not load 'Users' tab:", err);
+        }
+
+        // Fallback to local media_data.json if both tabs failed
+        if (!devLoaded && !userLoaded) {
             try {
-                console.log("[v2.5] Loading local fallback from media_data.json...");
+                console.log("[v3.0] Loading local fallback from media_data.json...");
                 const response = await fetch('media_data.json');
                 if (response.ok) {
                     const mediaList = await response.json();
-                    mediaDatabase = {};
+                    developerDatabase = {};
                     mediaList.forEach(item => {
                         if (item.id) {
-                            mediaDatabase[String(item.id).trim()] = item;
+                            developerDatabase[String(item.id).trim()] = item;
                         }
                     });
-                    console.log(`[v2.5] Loaded ${Object.keys(mediaDatabase).length} items from media_data.json.`);
-                    renderDatasetPreview();
-                    return true;
+                    console.log(`[v3.0] Loaded ${Object.keys(developerDatabase).length} items from media_data.json fallback.`);
                 }
             } catch (jsonErr) {
-                console.error("[v2.5] Failed to load local media_data.json fallback:", jsonErr);
+                console.error("[v3.0] Failed to load local media_data.json fallback:", jsonErr);
             }
         }
 
         renderDatasetPreview();
-        return loadedFromSheet;
+        return devLoaded || userLoaded;
     }
 
     // --- Function to play transition video ---
@@ -305,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
         img.alt = "Portal Door Closed";
         mediaDisplay.appendChild(img);
         isAtHomeScreen = true;
-        console.log("[v2.5] Home Screen active (doors closed). System ready.");
+        console.log("[v3.0] Home Screen active (doors closed). System ready.");
     }
 
     // --- Return to Home Screen (triggered by Escape key) ---
@@ -318,7 +373,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (isAtHomeScreen) {
-            console.log("[v2.5] Already at Home Screen.");
+            console.log("[v3.0] Already at Home Screen.");
             return;
         }
 
@@ -327,11 +382,11 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.remove('visible');
 
         try {
-            console.log("[v2.5] Returning to Home Screen (closing doors)...");
+            console.log("[v3.0] Returning to Home Screen (closing doors)...");
             await playTransition(doorCloseVideoUrl);
             showHomeScreen();
         } catch (err) {
-            console.error("[v2.5] Error returning to home screen:", err);
+            console.error("[v3.0] Error returning to home screen:", err);
             showHomeScreen();
         } finally {
             transitionVideo.classList.remove('active');
@@ -339,6 +394,30 @@ document.addEventListener('DOMContentLoaded', () => {
             transitionVideo.currentTime = 0;
             isTransitioning = false;
         }
+    }
+
+    // --- Render Registration Screen (QR code to Google Form with pre-filled ID) ---
+    function renderRegistrationScreen(unregisteredId) {
+        const prefilledFormUrl = `${GOOGLE_FORM_BASE_URL}?usp=pp_url&${GOOGLE_FORM_ID_ENTRY}=${encodeURIComponent(unregisteredId)}`;
+        const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(prefilledFormUrl)}`;
+
+        mediaDisplay.innerHTML = `
+            <div class="registration-container">
+                <span class="reg-badge">NEW PORTAL KEY DETECTED</span>
+                <h2 class="reg-title">Register Your Key</h2>
+                <div class="reg-id-box">Card ID: <span class="reg-id-val">${unregisteredId}</span></div>
+                <div class="reg-qr-wrapper">
+                    <img src="${qrApiUrl}" alt="Scan to register key ${unregisteredId}" />
+                </div>
+                <div class="reg-instructions">
+                    <div class="reg-step"><span class="reg-step-num">1.</span><span>Scan QR code with your phone camera</span></div>
+                    <div class="reg-step"><span class="reg-step-num">2.</span><span>Choose Title, Type & paste YouTube or Image link</span></div>
+                    <div class="reg-step"><span class="reg-step-num">3.</span><span>Submit form, then tap your card again!</span></div>
+                </div>
+                <a class="reg-direct-link" href="${prefilledFormUrl}" target="_blank" rel="noopener">Open Form in Browser</a>
+                <div class="reg-hint">Press Esc on keypad to return home</div>
+            </div>
+        `;
     }
 
     // --- Function to fetch and display media ---
@@ -360,33 +439,53 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.remove('visible');
 
         try {
-            // 1. Play door closing animation ONLY if the doors are not already closed
+            // 1. Check if ID exists in either Users tab or Developer tab
+            let data = userDatabase[cleanId] || developerDatabase[cleanId];
+
+            // If not found in current memory, do a quick fresh fetch of Users tab to see if it was JUST submitted
+            if (!data) {
+                try {
+                    console.log(`[v3.0] Card "${cleanId}" not in memory. Checking Users sheet for fresh submissions...`);
+                    const freshRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Users&t=${Date.now()}`);
+                    if (freshRes.ok) {
+                        const text = await freshRes.text();
+                        userDatabase = extractMediaFromRows(parseCSV(text), 'Users');
+                        data = userDatabase[cleanId];
+                        if (data) {
+                            console.log(`[v3.0] Fresh submission found in Users tab for ID "${cleanId}"!`);
+                            renderDatasetPreview();
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            // 2. Play door closing animation if currently open
             if (!isAtHomeScreen) {
                 await playTransition(doorCloseVideoUrl);
             }
 
-            // 2. Check record in database
-            const data = mediaDatabase[cleanId];
             mediaDisplay.innerHTML = '';
 
+            // 3. CASE: UNREGISTERED CARD -> Open door to QR Code Registration Screen!
             if (!data) {
-                mediaTitle.textContent = `Media not found for ID: ${cleanId}`;
-                mediaTitle.classList.add('visible');
-                showHomeScreen();
+                console.log(`[v3.0] Card "${cleanId}" is unregistered. Opening door to QR Code...`);
+                renderRegistrationScreen(cleanId);
+                isAtHomeScreen = false;
+                await playTransition(doorOpenVideoUrl);
                 return;
             }
 
+            // 4. CASE: REGISTERED CARD -> Play media
             const rawPath = data.file_path || '';
             const ytId = getYouTubeVideoId(rawPath);
             const resolvedPath = normalizeMediaUrl(rawPath, data.type);
-            console.log(`[v2.5] Playing card ID: ${cleanId}, title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
+            console.log(`[v3.0] Playing card ID: ${cleanId} from [${data.source}], title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
 
-            // 3. Load media behind the closed door
             await new Promise((resolve, reject) => {
                 // CASE A: YouTube Video
                 if (data.type === 'youtube' || ytId) {
                     const videoId = ytId || rawPath.trim();
-                    console.log(`[v2.5] Embedding YouTube video ID: ${videoId} (Muted: ${isMuted})`);
+                    console.log(`[v3.0] Embedding YouTube video ID: ${videoId} (Muted: ${isMuted})`);
                     const iframe = document.createElement('iframe');
                     iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&loop=1&playlist=${videoId}&enablejsapi=1`;
                     iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
@@ -394,18 +493,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     iframe.title = data.title || "YouTube scene";
 
                     iframe.onload = () => {
-                        console.log(`[v2.5] YouTube iframe loaded successfully.`);
+                        console.log(`[v3.0] YouTube iframe loaded successfully.`);
                         setTimeout(resolve, 800);
                     };
                     iframe.onerror = (err) => {
-                        console.error(`[v2.5] YouTube iframe error:`, err);
+                        console.error(`[v3.0] YouTube iframe error:`, err);
                         reject(new Error("Failed to load YouTube player"));
                     };
                     mediaDisplay.appendChild(iframe);
 
                     // Safety timeout in case YouTube buffers slowly
                     setTimeout(() => {
-                        console.log(`[v2.5] Safety timeout reached, opening door.`);
+                        console.log(`[v3.0] Safety timeout reached, opening door.`);
                         resolve();
                     }, 3500);
 
@@ -437,13 +536,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     video.play().then(() => {
                         resolve();
                     }).catch(error => {
-                        console.warn("[v2.5] Autoplay error:", error);
-                        // If unmuted playback was blocked by browser policy, fallback to muted to keep door opening
+                        console.warn("[v3.0] Autoplay error:", error);
                         if (!video.muted) {
-                            console.log("[v2.5] Attempting playback fallback to muted...");
+                            console.log("[v3.0] Attempting playback fallback to muted...");
                             video.muted = true;
                             video.play().then(resolve).catch(err2 => {
-                                console.warn("[v2.5] Playback failed completely:", err2);
+                                console.warn("[v3.0] Playback failed completely:", err2);
                                 resolve();
                             });
                         } else {
@@ -455,12 +553,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // 4. Play door opening animation to reveal new media
+            // 5. Play door opening animation to reveal media
             isAtHomeScreen = false;
             await playTransition(doorOpenVideoUrl);
 
         } catch (error) {
-            console.error('Error during media transition:', error);
+            console.error('[v3.0] Error during media transition:', error);
             mediaTitle.textContent = error.message || 'Error loading media.';
             mediaTitle.classList.add('visible');
             showHomeScreen();
@@ -507,11 +605,11 @@ document.addEventListener('DOMContentLoaded', () => {
             event.preventDefault();
             controlsDiv.classList.toggle('visible');
             if (controlsDiv.classList.contains('visible')) {
-                console.log("[v2.5] Developer Mode opened.");
+                console.log("[v3.0] Developer Mode opened.");
                 renderDatasetPreview();
                 contentIdInput.focus();
             } else {
-                console.log("[v2.5] Developer Mode closed.");
+                console.log("[v3.0] Developer Mode closed.");
             }
             return;
         }
@@ -572,7 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial startup
-    console.log("Portal Door v2.5 initialized.");
+    console.log("Portal Door v3.0 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();

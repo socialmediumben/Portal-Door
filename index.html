@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=2.5">
+    <link rel="stylesheet" href="static/style.css?v=3.0">
 </head>
 <body>
     <div class="controls">
@@ -12,7 +12,7 @@
             <span class="dev-title"><span class="dev-indicator"></span> DEVELOPER MODE</span>
             <div class="dev-bar-actions">
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v2.5</span>
+                <span class="version-badge">v3.0</span>
             </div>
         </div>
         <div class="controls-header">
@@ -40,7 +40,7 @@
 
         <div class="dev-dataset-container">
             <div class="dev-dataset-header">
-                <span>Google Sheet Items (First 10):</span>
+                <span id="devDatasetTitle">Developer Dataset (Full):</span>
                 <span class="dev-dataset-subtext">Click any row to test</span>
             </div>
             <div id="devDatasetList" class="dev-dataset-list">
@@ -59,6 +59,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=2.5"></script>
+    <script src="static/script.js?v=3.0"></script>
 </body>
 </html>
