@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v5.7
+// static/script.js - Portal Door v5.8
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -62,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Photobooth Mode State
     let isPhotoboothActive = false;
+    let isTogglingPhotobooth = false;
     let webcamStream = null;
     let selfieSegmentation = null;
     let isProcessingFrame = false;
@@ -257,27 +258,73 @@ document.addEventListener('DOMContentLoaded', () => {
         photoboothAnimationId = requestAnimationFrame(renderPhotoboothLoop);
     }
 
+    // --- Robust Webcam Stream Acquisition with Automatic Retries & Fallbacks ---
+    async function getWebcamMediaStream() {
+        const constraintOptions = [
+            // 1. High-quality 720p facing user
+            { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false },
+            // 2. Ideal 720p without strict facingMode
+            { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+            // 3. Fallback generic video stream (most compatible)
+            { video: true, audio: false }
+        ];
+
+        let lastErr = null;
+        for (let attempt = 0; attempt < constraintOptions.length; attempt++) {
+            try {
+                // Ensure any previous tracks are completely released before requesting
+                if (webcamStream) {
+                    try { webcamStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+                    webcamStream = null;
+                }
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraintOptions[attempt]);
+                console.log(`[v5.8] Webcam stream acquired on attempt #${attempt + 1}.`);
+                return stream;
+            } catch (err) {
+                lastErr = err;
+                console.warn(`[v5.8] Webcam attempt #${attempt + 1} failed (${err.name}: ${err.message}). Retrying...`);
+
+                // If user explicitly denied permissions, stop immediately
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    throw err;
+                }
+
+                // If Windows camera driver lock (NotReadableError) or device busy, wait 350ms before next try
+                await new Promise(res => setTimeout(res, 350));
+            }
+        }
+        throw lastErr;
+    }
+
     // --- Photobooth Mode Toggle ---
     async function togglePhotobooth(forcedState) {
-        const targetState = (typeof forcedState === 'boolean') ? forcedState : !isPhotoboothActive;
+        if (isTogglingPhotobooth) {
+            console.log("[v5.8] Photobooth toggle already in progress. Ignoring overlapping call.");
+            return;
+        }
 
+        const targetState = (typeof forcedState === 'boolean') ? forcedState : !isPhotoboothActive;
         if (targetState === isPhotoboothActive) return;
 
-        if (targetState) {
-            try {
+        isTogglingPhotobooth = true;
+
+        try {
+            if (targetState) {
                 initSelfieSegmentation();
 
-                webcamStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        facingMode: "user"
-                    },
-                    audio: false
-                });
-
+                // Acquire webcam stream with automatic retries for NotReadableError
+                webcamStream = await getWebcamMediaStream();
                 webcamVideo.srcObject = webcamStream;
-                await webcamVideo.play();
+
+                await new Promise((resolve) => {
+                    webcamVideo.onloadedmetadata = () => {
+                        webcamVideo.play().then(resolve).catch(resolve);
+                    };
+                    setTimeout(() => {
+                        webcamVideo.play().then(resolve).catch(resolve);
+                    }, 500);
+                });
 
                 isPhotoboothActive = true;
                 updatePhotoboothVisibility();
@@ -291,43 +338,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderPhotoboothLoop();
 
                 showToast("Photo On");
-                console.log("[v5.3] Photobooth Mode activated.");
-            } catch (err) {
-                console.error("[v5.3] Failed to start Photobooth camera:", err);
-                showToast("⚠️ Camera Error: " + (err.name || "Access Denied"));
+                console.log("[v5.8] Photobooth Mode activated successfully.");
+            } else {
                 isPhotoboothActive = false;
                 updatePhotoboothVisibility();
+
+                if (photoboothAnimationId) {
+                    cancelAnimationFrame(photoboothAnimationId);
+                    photoboothAnimationId = null;
+                }
+
+                if (webcamStream) {
+                    try { webcamStream.getTracks().forEach(track => track.stop()); } catch (_) {}
+                    webcamStream = null;
+                }
+
+                if (webcamVideo) {
+                    try {
+                        webcamVideo.pause();
+                        webcamVideo.srcObject = null;
+                    } catch (_) {}
+                }
+
                 if (photoboothToggleBtn) {
                     photoboothToggleBtn.textContent = '📸 Photo: OFF';
                     photoboothToggleBtn.classList.remove('active');
                 }
+
+                showToast("Photo Off");
+                console.log("[v5.8] Photobooth Mode deactivated.");
             }
-        } else {
+        } catch (err) {
+            console.error("[v5.8] Failed to start Photobooth camera:", err);
+            showToast("⚠️ Camera Error: " + (err.name || "Access Denied"));
             isPhotoboothActive = false;
             updatePhotoboothVisibility();
-
-            if (photoboothAnimationId) {
-                cancelAnimationFrame(photoboothAnimationId);
-                photoboothAnimationId = null;
-            }
-
-            if (webcamStream) {
-                webcamStream.getTracks().forEach(track => track.stop());
-                webcamStream = null;
-            }
-
-            if (webcamVideo) {
-                webcamVideo.pause();
-                webcamVideo.srcObject = null;
-            }
-
             if (photoboothToggleBtn) {
                 photoboothToggleBtn.textContent = '📸 Photo: OFF';
                 photoboothToggleBtn.classList.remove('active');
             }
-
-            showToast("Photo Off");
-            console.log("[v5.3] Photobooth Mode deactivated.");
+        } finally {
+            isTogglingPhotobooth = false;
         }
     }
 
@@ -1813,10 +1864,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial startup
-    console.log("Portal Door v5.7 initialized.");
+    console.log("Portal Door v5.8 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
     showHomeScreen();
     loadMediaDatabase();
+
+    // Warm up MediaPipe in background after short delay so first webcam toggle doesn't lag
+    setTimeout(() => {
+        initSelfieSegmentation();
+    }, 1200);
 });
