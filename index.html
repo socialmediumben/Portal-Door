@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=5.5">
+    <link rel="stylesheet" href="static/style.css?v=5.6">
     <!-- Google MediaPipe for AI background removal -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -16,7 +16,7 @@
             <div class="dev-bar-actions">
                 <button id="photoboothToggleBtn" class="dev-photobooth-btn" title="Toggle Photobooth Mode (*)">📸 Photo: OFF</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v5.5</span>
+                <span class="version-badge">v5.6</span>
             </div>
         </div>
         <div class="controls-header">
@@ -121,8 +121,34 @@
         </div>
     </div>
 
+    <!-- Photobooth Media Options Modal (Shows thumbnails when Enter is pressed with empty search bar) -->
+    <div id="photoboothGalleryModal" class="capture-modal photobooth-gallery-modal">
+        <div id="photoboothGalleryCard" class="capture-result-card gallery-result-card">
+            <div class="capture-header">
+                <div class="capture-header-top">
+                    <span class="capture-title">📸 PHOTOBOOTH MEDIA OPTIONS</span>
+                    <div id="galleryInactivityBadge" class="capture-inactivity-badge" title="Auto-resets after inactivity">
+                        <span class="timer-icon">⏱️</span>
+                        <span id="galleryTimerText" class="timer-countdown">90s</span>
+                    </div>
+                </div>
+                <span class="capture-subtitle">Press a number on the keypad (or tap) to choose your portal backdrop</span>
+            </div>
+
+            <!-- Grid of Photobooth Media Thumbnails -->
+            <div id="galleryCardsGrid" class="gallery-cards-grid">
+                <!-- Dynamically populated from Google Sheet 'Photobooth' tab -->
+            </div>
+
+            <div class="capture-footer-guide">
+                <span><kbd>1-9</kbd> Select Backdrop</span>
+                <span id="galleryCancelHint"><kbd>Esc</kbd> Cancel</span>
+            </div>
+        </div>
+    </div>
+
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=5.5"></script>
+    <script src="static/script.js?v=5.6"></script>
 </body>
 </html>
