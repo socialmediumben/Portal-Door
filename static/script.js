@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v4.2
+// static/script.js - Portal Door v5.0
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -14,6 +14,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const photoboothToggleBtn = document.getElementById('photoboothToggleBtn');
     const photoboothCanvas = document.getElementById('photoboothCanvas');
     const webcamVideo = document.getElementById('webcamVideo');
+    const scriptUrlInput = document.getElementById('scriptUrlInput');
+
+    // Capture Modal Elements
+    const captureModal = document.getElementById('captureModal');
+    const captureCountdown = document.getElementById('captureCountdown');
+    const captureFlash = document.getElementById('captureFlash');
+    const captureCanvas = document.getElementById('captureCanvas');
+    const captureSpinner = document.getElementById('captureSpinner');
+    const captureQrOverlay = document.getElementById('captureQrOverlay');
+    const captureQrImg = document.getElementById('captureQrImg');
+    const captureDirectLink = document.getElementById('captureDirectLink');
+    const backdropSelectorBar = document.getElementById('backdropSelectorBar');
+    const captureConfirmHint = document.getElementById('captureConfirmHint');
 
     // Google Sheet CSV export base URL (spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0)
     const GOOGLE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/gviz/tq?tqx=out:csv";
@@ -31,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Datasets & Portal State
     let developerDatabase = {};
     let userDatabase = {};
+    let photoboothBackdrops = [];
     let isTransitioning = false;
     let isAtHomeScreen = true;
     let isShowingRegistration = false;
@@ -44,6 +58,47 @@ document.addEventListener('DOMContentLoaded', () => {
     let isProcessingFrame = false;
     let photoboothAnimationId = null;
 
+    // Capture State
+    let isCountingDown = false;
+    let isCaptureModalOpen = false;
+    let isUploadingPhoto = false;
+    let isPhotoUploaded = false;
+    let capturedPersonCanvas = document.createElement('canvas');
+    let selectedBackdropIndex = 0;
+    let loadedBackdropImages = {};
+
+    // Google Drive Web App Script URL (persisted in localStorage)
+    let driveScriptUrl = localStorage.getItem('portal_drive_script_url') || '';
+    if (scriptUrlInput) {
+        scriptUrlInput.value = driveScriptUrl;
+        scriptUrlInput.addEventListener('change', () => {
+            driveScriptUrl = scriptUrlInput.value.trim();
+            localStorage.setItem('portal_drive_script_url', driveScriptUrl);
+            showToast("💾 Drive Script URL Saved!");
+            console.log("[v5.0] Drive Script URL updated:", driveScriptUrl);
+        });
+    }
+
+    // Audio tone generator for countdown beeps
+    function playBeep(frequency = 880, duration = 0.15) {
+        if (isMuted) return;
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+            const ctx = new AudioContext();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = frequency;
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + duration);
+        } catch (_) {}
+    }
+
     // --- On-screen Toast Notification ---
     function showToast(message) {
         if (!soundToast) return;
@@ -56,10 +111,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Update Photobooth Canvas Visibility ---
-    // The webcam stream/cutout is strictly ONLY visible when media is actively playing and doors are open
     function updatePhotoboothVisibility() {
         if (!photoboothCanvas) return;
-        const shouldBeVisible = isPhotoboothActive && !isAtHomeScreen && !isShowingRegistration;
+        const shouldBeVisible = isPhotoboothActive && !isAtHomeScreen && !isShowingRegistration && !isCaptureModalOpen;
         if (shouldBeVisible) {
             photoboothCanvas.classList.add('visible');
         } else {
@@ -86,13 +140,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateSoundUI();
 
-        // 1. Update native HTML5 video if playing
         const activeVideo = mediaDisplay.querySelector('video');
         if (activeVideo) {
             activeVideo.muted = isMuted;
         }
 
-        // 2. Update YouTube iframe if playing (via YouTube IFrame API postMessage)
         const activeIframe = mediaDisplay.querySelector('iframe');
         if (activeIframe && activeIframe.contentWindow) {
             const ytCommand = isMuted ? 'mute' : 'unMute';
@@ -104,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         showToast(isMuted ? '🔇 Sound: OFF' : '🔊 Sound: ON');
-        console.log(`[v4.2] Audio toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
+        console.log(`[v5.0] Audio toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
     }
 
     // --- Fullscreen Toggle ---
@@ -123,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- MediaPipe Selfie Segmentation Setup ---
     function initSelfieSegmentation() {
         if (typeof SelfieSegmentation === 'undefined') {
-            console.warn("[v4.2] MediaPipe SelfieSegmentation not loaded yet.");
+            console.warn("[v5.0] MediaPipe SelfieSegmentation not loaded yet.");
             return null;
         }
         if (selfieSegmentation) return selfieSegmentation;
@@ -137,10 +189,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 selfieMode: true   // automatically flips video for natural mirror view
             });
             selfieSegmentation.onResults(onSelfieSegmentationResults);
-            console.log("[v4.2] MediaPipe SelfieSegmentation initialized successfully.");
+            console.log("[v5.0] MediaPipe SelfieSegmentation initialized successfully.");
             return selfieSegmentation;
         } catch (err) {
-            console.error("[v4.2] Error initializing SelfieSegmentation:", err);
+            console.error("[v5.0] Error initializing SelfieSegmentation:", err);
             return null;
         }
     }
@@ -148,13 +200,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function onSelfieSegmentationResults(results) {
         try {
             if (!photoboothCanvas || !isPhotoboothActive) return;
-            
-            // If doors are closed or showing registration, don't paint onto the canvas
-            if (isAtHomeScreen || isShowingRegistration) return;
+            if (isAtHomeScreen || isShowingRegistration || isCaptureModalOpen) return;
 
             const ctx = photoboothCanvas.getContext('2d');
 
-            // Match canvas internal resolution to incoming video feed
             if (photoboothCanvas.width !== results.image.width || photoboothCanvas.height !== results.image.height) {
                 photoboothCanvas.width = results.image.width;
                 photoboothCanvas.height = results.image.height;
@@ -162,17 +211,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             ctx.save();
             ctx.clearRect(0, 0, photoboothCanvas.width, photoboothCanvas.height);
-
-            // 1. Draw the segmentation mask (human silhouette)
             ctx.drawImage(results.segmentationMask, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
-
-            // 2. Composite: only draw the camera frame where the mask was drawn
             ctx.globalCompositeOperation = 'source-in';
             ctx.drawImage(results.image, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
-
             ctx.restore();
         } finally {
-            // ALWAYS reset isProcessingFrame so subsequent frames are processed without locking
             isProcessingFrame = false;
         }
     }
@@ -180,14 +223,13 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderPhotoboothLoop() {
         if (!isPhotoboothActive) return;
 
-        // Only run inference when media is actively playing (doors open)
-        if (!isAtHomeScreen && !isShowingRegistration) {
+        if (!isAtHomeScreen && !isShowingRegistration && !isCaptureModalOpen) {
             if (webcamVideo && webcamVideo.readyState >= 2 && !isProcessingFrame && selfieSegmentation) {
                 isProcessingFrame = true;
                 try {
                     await selfieSegmentation.send({ image: webcamVideo });
                 } catch (err) {
-                    console.warn("[v4.2] Frame segmentation error:", err);
+                    console.warn("[v5.0] Frame segmentation error:", err);
                     isProcessingFrame = false;
                 }
             }
@@ -203,7 +245,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (targetState === isPhotoboothActive) return;
 
         if (targetState) {
-            // Activating Photobooth
             showToast("📸 Initializing Camera & AI...");
             try {
                 initSelfieSegmentation();
@@ -232,9 +273,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderPhotoboothLoop();
 
                 showToast("📸 Photobooth Mode: ON");
-                console.log("[v4.2] Photobooth Mode activated.");
+                console.log("[v5.0] Photobooth Mode activated.");
             } catch (err) {
-                console.error("[v4.2] Failed to start Photobooth camera:", err);
+                console.error("[v5.0] Failed to start Photobooth camera:", err);
                 showToast("⚠️ Camera Error: " + (err.name || "Access Denied"));
                 isPhotoboothActive = false;
                 updatePhotoboothVisibility();
@@ -244,7 +285,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } else {
-            // Deactivating Photobooth
             isPhotoboothActive = false;
             updatePhotoboothVisibility();
 
@@ -269,7 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             showToast("📸 Photobooth Mode: OFF");
-            console.log("[v4.2] Photobooth Mode deactivated.");
+            console.log("[v5.0] Photobooth Mode deactivated.");
         }
     }
 
@@ -356,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (idIdx === -1) {
-            console.warn(`[v4.2] No ID column found in ${sourceName} sheet.`);
+            console.warn(`[v5.0] No ID column found in ${sourceName} sheet.`);
             return db;
         }
 
@@ -400,7 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         row.addEventListener('click', () => {
-            console.log(`[v4.2] Preview item clicked: ${item.id}`);
+            console.log(`[v5.0] Preview item clicked: ${item.id}`);
             contentIdInput.value = item.id;
             fetchMedia(item.id);
         });
@@ -426,12 +466,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         devDatasetList.innerHTML = '';
 
-        // 1. Render FULL dataset from Developer tab
         devItems.forEach((item) => {
             devDatasetList.appendChild(createDatasetRow(item, 'Developer'));
         });
 
-        // 2. Render User-submitted items below
         if (userItems.length > 0) {
             const userDivider = document.createElement('div');
             userDivider.className = 'dev-dataset-header';
@@ -453,38 +491,52 @@ document.addEventListener('DOMContentLoaded', () => {
         let devLoaded = false;
         let userLoaded = false;
 
-        // Fetch Developer Tab
+        // 1. Fetch Developer Tab
         try {
-            console.log("[v4.2] Fetching 'Developer' tab from Google Sheets...");
+            console.log("[v5.0] Fetching 'Developer' tab from Google Sheets...");
             const devRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Developer&t=${Date.now()}`);
             if (devRes.ok) {
                 const text = await devRes.text();
                 developerDatabase = extractMediaFromRows(parseCSV(text), 'Developer');
                 devLoaded = true;
-                console.log(`[v4.2] Loaded ${Object.keys(developerDatabase).length} items from Developer tab.`);
+                console.log(`[v5.0] Loaded ${Object.keys(developerDatabase).length} items from Developer tab.`);
             }
         } catch (err) {
-            console.warn("[v4.2] Could not load 'Developer' tab:", err);
+            console.warn("[v5.0] Could not load 'Developer' tab:", err);
         }
 
-        // Fetch Users Tab
+        // 2. Fetch Users Tab
         try {
-            console.log("[v4.2] Fetching 'Users' tab from Google Sheets...");
+            console.log("[v5.0] Fetching 'Users' tab from Google Sheets...");
             const userRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Users&t=${Date.now()}`);
             if (userRes.ok) {
                 const text = await userRes.text();
                 userDatabase = extractMediaFromRows(parseCSV(text), 'Users');
                 userLoaded = true;
-                console.log(`[v4.2] Loaded ${Object.keys(userDatabase).length} items from Users tab.`);
+                console.log(`[v5.0] Loaded ${Object.keys(userDatabase).length} items from Users tab.`);
             }
         } catch (err) {
-            console.warn("[v4.2] Could not load 'Users' tab:", err);
+            console.warn("[v5.0] Could not load 'Users' tab:", err);
+        }
+
+        // 3. Fetch Photobooth Backdrops Tab
+        try {
+            console.log("[v5.0] Fetching 'Photobooth' backdrops tab from Google Sheets...");
+            const pbRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Photobooth&t=${Date.now()}`);
+            if (pbRes.ok) {
+                const text = await pbRes.text();
+                const pbDb = extractMediaFromRows(parseCSV(text), 'Photobooth');
+                photoboothBackdrops = Object.values(pbDb);
+                console.log(`[v5.0] Loaded ${photoboothBackdrops.length} Photobooth backdrops.`);
+            }
+        } catch (pbErr) {
+            console.warn("[v5.0] Could not load 'Photobooth' tab:", pbErr);
         }
 
         // Fallback to local media_data.json if both tabs failed
         if (!devLoaded && !userLoaded) {
             try {
-                console.log("[v4.2] Loading local fallback from media_data.json...");
+                console.log("[v5.0] Loading local fallback from media_data.json...");
                 const response = await fetch('media_data.json');
                 if (response.ok) {
                     const mediaList = await response.json();
@@ -494,10 +546,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             developerDatabase[String(item.id).trim()] = item;
                         }
                     });
-                    console.log(`[v4.2] Loaded ${Object.keys(developerDatabase).length} items from media_data.json fallback.`);
+                    console.log(`[v5.0] Loaded ${Object.keys(developerDatabase).length} items from media_data.json fallback.`);
                 }
             } catch (jsonErr) {
-                console.error("[v4.2] Failed to load local media_data.json fallback:", jsonErr);
+                console.error("[v5.0] Failed to load local media_data.json fallback:", jsonErr);
             }
         }
 
@@ -543,7 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isAtHomeScreen = true;
         isShowingRegistration = false;
 
-        // Hide photobooth cutout immediately when closed doors are active
+        closeCaptureModal();
         updatePhotoboothVisibility();
 
         mediaDisplay.innerHTML = '';
@@ -551,23 +603,27 @@ document.addEventListener('DOMContentLoaded', () => {
         img.src = defaultClosedDoorUrl;
         img.alt = "Portal Door Closed";
         mediaDisplay.appendChild(img);
-        console.log("[v4.2] Home Screen active (doors closed). System ready.");
+        console.log("[v5.0] Home Screen active (doors closed). System ready.");
     }
 
     // --- Return to Home Screen (triggered by Escape key) ---
     async function returnToHomeScreen() {
         if (isTransitioning) return;
 
+        if (isCaptureModalOpen) {
+            closeCaptureModal();
+            return;
+        }
+
         if (controlsDiv.classList.contains('visible')) {
             controlsDiv.classList.remove('visible');
         }
 
         if (isAtHomeScreen) {
-            console.log("[v4.2] Already at Home Screen.");
+            console.log("[v5.0] Already at Home Screen.");
             return;
         }
 
-        // Hide photobooth immediately as doors begin to close
         if (photoboothCanvas) {
             photoboothCanvas.classList.remove('visible');
             const ctx = photoboothCanvas.getContext('2d');
@@ -579,11 +635,11 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.remove('visible');
 
         try {
-            console.log("[v4.2] Returning to Home Screen (closing doors)...");
+            console.log("[v5.0] Returning to Home Screen (closing doors)...");
             await playTransition(doorCloseVideoUrl);
             showHomeScreen();
         } catch (err) {
-            console.error("[v4.2] Error returning to home screen:", err);
+            console.error("[v5.0] Error returning to home screen:", err);
             showHomeScreen();
         } finally {
             transitionVideo.classList.remove('active');
@@ -596,8 +652,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Render Registration Screen (QR code to Google Form with pre-filled ID) ---
     function renderRegistrationScreen(unregisteredId) {
         isShowingRegistration = true;
-
-        // Ensure photobooth is hidden on QR registration screen
         updatePhotoboothVisibility();
 
         const prefilledFormUrl = `${GOOGLE_FORM_BASE_URL}?usp=pp_url&${GOOGLE_FORM_ID_ENTRY}=${encodeURIComponent(unregisteredId)}`;
@@ -629,6 +683,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        closeCaptureModal();
+
         const cleanId = String(contentId).trim();
         if (!cleanId) {
             mediaTitle.textContent = 'Please enter a Content ID.';
@@ -636,7 +692,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hide photobooth during transition / door closing
         if (photoboothCanvas) {
             photoboothCanvas.classList.remove('visible');
         }
@@ -646,53 +701,51 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.remove('visible');
 
         try {
-            // 1. Check if ID exists in Users or Developer tab
             let data = userDatabase[cleanId] || developerDatabase[cleanId];
 
             if (!data) {
                 try {
-                    console.log(`[v4.2] Card "${cleanId}" not in memory. Checking Users sheet for fresh submissions...`);
+                    console.log(`[v5.0] Card "${cleanId}" not in memory. Checking Users sheet for fresh submissions...`);
                     const freshRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Users&t=${Date.now()}`);
                     if (freshRes.ok) {
                         const text = await freshRes.text();
                         userDatabase = extractMediaFromRows(parseCSV(text), 'Users');
                         data = userDatabase[cleanId];
                         if (data) {
-                            console.log(`[v4.2] Fresh submission found in Users tab for ID "${cleanId}"!`);
+                            console.log(`[v5.0] Fresh submission found in Users tab for ID "${cleanId}"!`);
                             renderDatasetPreview();
                         }
                     }
                 } catch (_) {}
             }
 
-            // 2. Play door closing animation if currently open
             if (!isAtHomeScreen) {
                 await playTransition(doorCloseVideoUrl);
             }
 
             mediaDisplay.innerHTML = '';
 
-            // 3. CASE: UNREGISTERED CARD -> Open door to QR Code Registration Screen!
+            // CASE: UNREGISTERED CARD -> Open door to QR Code Registration Screen!
             if (!data) {
-                console.log(`[v4.2] Card "${cleanId}" is unregistered. Opening door to QR Code...`);
+                console.log(`[v5.0] Card "${cleanId}" is unregistered. Opening door to QR Code...`);
                 renderRegistrationScreen(cleanId);
                 isAtHomeScreen = false;
                 await playTransition(doorOpenVideoUrl);
                 return;
             }
 
-            // 4. CASE: REGISTERED CARD -> Play media
+            // CASE: REGISTERED CARD -> Play media
             isShowingRegistration = false;
             const rawPath = data.file_path || '';
             const ytId = getYouTubeVideoId(rawPath);
             const resolvedPath = normalizeMediaUrl(rawPath, data.type);
-            console.log(`[v4.2] Playing card ID: ${cleanId} from [${data.source}], title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
+            console.log(`[v5.0] Playing card ID: ${cleanId} from [${data.source}], title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
 
             await new Promise((resolve, reject) => {
                 // CASE A: YouTube Video
                 if (data.type === 'youtube' || ytId) {
                     const videoId = ytId || rawPath.trim();
-                    console.log(`[v4.2] Embedding YouTube video ID: ${videoId} (Muted: ${isMuted})`);
+                    console.log(`[v5.0] Embedding YouTube video ID: ${videoId} (Muted: ${isMuted})`);
                     const iframe = document.createElement('iframe');
                     iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&loop=1&playlist=${videoId}&enablejsapi=1`;
                     iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
@@ -700,18 +753,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     iframe.title = data.title || "YouTube scene";
 
                     iframe.onload = () => {
-                        console.log(`[v4.2] YouTube iframe loaded successfully.`);
+                        console.log(`[v5.0] YouTube iframe loaded successfully.`);
                         setTimeout(resolve, 800);
                     };
                     iframe.onerror = (err) => {
-                        console.error(`[v4.2] YouTube iframe error:`, err);
+                        console.error(`[v5.0] YouTube iframe error:`, err);
                         reject(new Error("Failed to load YouTube player"));
                     };
                     mediaDisplay.appendChild(iframe);
 
-                    // Safety timeout in case YouTube buffers slowly
                     setTimeout(() => {
-                        console.log(`[v4.2] Safety timeout reached, opening door.`);
+                        console.log(`[v5.0] Safety timeout reached, opening door.`);
                         resolve();
                     }, 3500);
 
@@ -743,12 +795,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     video.play().then(() => {
                         resolve();
                     }).catch(error => {
-                        console.warn("[v4.2] Autoplay error:", error);
+                        console.warn("[v5.0] Autoplay error:", error);
                         if (!video.muted) {
-                            console.log("[v4.2] Attempting playback fallback to muted...");
+                            console.log("[v5.0] Attempting playback fallback to muted...");
                             video.muted = true;
                             video.play().then(resolve).catch(err2 => {
-                                console.warn("[v4.2] Playback failed completely:", err2);
+                                console.warn("[v5.0] Playback failed completely:", err2);
                                 resolve();
                             });
                         } else {
@@ -760,17 +812,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // 5. Open doors to reveal media
+            // Open doors to reveal media
             isAtHomeScreen = false;
             isShowingRegistration = false;
 
-            // Make photobooth visible as doors open to reveal the active scene
             updatePhotoboothVisibility();
 
             await playTransition(doorOpenVideoUrl);
 
         } catch (error) {
-            console.error('[v4.2] Error during media transition:', error);
+            console.error('[v5.0] Error during media transition:', error);
             mediaTitle.textContent = error.message || 'Error loading media.';
             mediaTitle.classList.add('visible');
             showHomeScreen();
@@ -782,19 +833,315 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- PHOTOBOOTH CAPTURE & BACKDROP COMPOSITING ---
+
+    // Load an image into memory with CORS support
+    function preloadImage(url) {
+        return new Promise((resolve) => {
+            if (!url) return resolve(null);
+            if (loadedBackdropImages[url]) return resolve(loadedBackdropImages[url]);
+
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+                loadedBackdropImages[url] = img;
+                resolve(img);
+            };
+            img.onerror = () => {
+                console.warn("[v5.0] Failed to load backdrop with CORS, trying without:", url);
+                const fallbackImg = new Image();
+                fallbackImg.onload = () => {
+                    loadedBackdropImages[url] = fallbackImg;
+                    resolve(fallbackImg);
+                };
+                fallbackImg.onerror = () => resolve(null);
+                fallbackImg.src = url;
+            };
+            img.src = url;
+        });
+    }
+
+    // Renders the combined composite on #captureCanvas
+    async function renderCompositeCapture() {
+        if (!captureCanvas) return;
+        const ctx = captureCanvas.getContext('2d');
+
+        const width = 1280;
+        const height = 720;
+        if (captureCanvas.width !== width || captureCanvas.height !== height) {
+            captureCanvas.width = width;
+            captureCanvas.height = height;
+        }
+
+        ctx.clearRect(0, 0, width, height);
+
+        // 1. Draw Backdrop
+        let backdropDrawn = false;
+        if (photoboothBackdrops.length > 0 && photoboothBackdrops[selectedBackdropIndex]) {
+            const item = photoboothBackdrops[selectedBackdropIndex];
+            const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
+            const img = await preloadImage(resolvedUrl);
+            if (img) {
+                // Draw image scaled to cover canvas
+                const hRatio = width / img.width;
+                const vRatio = height / img.height;
+                const ratio = Math.max(hRatio, vRatio);
+                const centerShiftX = (width - img.width * ratio) / 2;
+                const centerShiftY = (height - img.height * ratio) / 2;
+                ctx.drawImage(img, 0, 0, img.width, img.height, centerShiftX, centerShiftY, img.width * ratio, img.height * ratio);
+                backdropDrawn = true;
+            }
+        }
+
+        // Fallback backdrop gradient if image fails
+        if (!backdropDrawn) {
+            const grad = ctx.createLinearGradient(0, 0, width, height);
+            grad.addColorStop(0, '#0f172a');
+            grad.addColorStop(1, '#0284c7');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        // 2. Draw Person Cutout on top
+        if (capturedPersonCanvas && capturedPersonCanvas.width > 0) {
+            const hRatio = width / capturedPersonCanvas.width;
+            const vRatio = height / capturedPersonCanvas.height;
+            const ratio = Math.max(hRatio, vRatio);
+            const centerShiftX = (width - capturedPersonCanvas.width * ratio) / 2;
+            const centerShiftY = (height - capturedPersonCanvas.height * ratio) / 2;
+            ctx.drawImage(
+                capturedPersonCanvas,
+                0, 0, capturedPersonCanvas.width, capturedPersonCanvas.height,
+                centerShiftX, centerShiftY, capturedPersonCanvas.width * ratio, capturedPersonCanvas.height * ratio
+            );
+        }
+
+        // 3. Sci-Fi Portal Watermark
+        ctx.save();
+        ctx.font = 'bold 22px Arial, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+        ctx.shadowColor = 'rgba(0, 210, 255, 0.8)';
+        ctx.shadowBlur = 8;
+        ctx.fillText('PORTAL DOOR PHOTOBOOTH', 30, height - 30);
+        ctx.restore();
+    }
+
+    // Populate backdrop pills in the selector bar
+    function renderBackdropSelectorPills() {
+        if (!backdropSelectorBar) return;
+        backdropSelectorBar.innerHTML = '';
+
+        photoboothBackdrops.forEach((item, index) => {
+            const pill = document.createElement('div');
+            pill.className = `backdrop-pill ${index === selectedBackdropIndex ? 'selected' : ''}`;
+            pill.innerHTML = `<kbd>${index + 1}</kbd> <span>${item.title}</span>`;
+            pill.addEventListener('click', () => {
+                selectBackdrop(index);
+            });
+            backdropSelectorBar.appendChild(pill);
+        });
+    }
+
+    function selectBackdrop(index) {
+        if (index < 0 || index >= photoboothBackdrops.length) return;
+        selectedBackdropIndex = index;
+        renderBackdropSelectorPills();
+        renderCompositeCapture();
+        console.log(`[v5.0] Switched to backdrop #${index + 1}: ${photoboothBackdrops[index]?.title}`);
+    }
+
+    // Close the capture modal and return to portal view
+    function closeCaptureModal() {
+        isCaptureModalOpen = false;
+        isCountingDown = false;
+        isUploadingPhoto = false;
+        isPhotoUploaded = false;
+
+        if (captureModal) captureModal.classList.remove('active');
+        if (captureSpinner) captureSpinner.classList.remove('active');
+        if (captureQrOverlay) captureQrOverlay.classList.remove('active');
+        if (captureFlash) captureFlash.classList.remove('active');
+        if (captureCountdown) captureCountdown.classList.remove('active');
+
+        updatePhotoboothVisibility();
+    }
+
+    // Start 3-2-1 Countdown and Snapshot
+    async function startPhotoCountdown() {
+        if (isCountingDown || isCaptureModalOpen) return;
+
+        // If photobooth is not on yet, turn it on first
+        if (!isPhotoboothActive) {
+            await togglePhotobooth(true);
+        }
+
+        isCountingDown = true;
+        if (captureCountdown) {
+            captureCountdown.classList.add('active');
+        }
+
+        let count = 3;
+        captureCountdown.textContent = count;
+        playBeep(880, 0.15);
+
+        const timer = setInterval(async () => {
+            count--;
+            if (count > 0) {
+                captureCountdown.textContent = count;
+                playBeep(880, 0.15);
+            } else {
+                clearInterval(timer);
+                captureCountdown.classList.remove('active');
+                playBeep(1320, 0.35); // higher confirmation pitch
+
+                // Camera flash
+                captureFlash.classList.add('active');
+                setTimeout(() => {
+                    captureFlash.classList.remove('active');
+                }, 100);
+
+                // Freeze person cutout from photoboothCanvas
+                if (photoboothCanvas && photoboothCanvas.width > 0) {
+                    capturedPersonCanvas.width = photoboothCanvas.width;
+                    capturedPersonCanvas.height = photoboothCanvas.height;
+                    const pCtx = capturedPersonCanvas.getContext('2d');
+                    pCtx.clearRect(0, 0, capturedPersonCanvas.width, capturedPersonCanvas.height);
+                    pCtx.drawImage(photoboothCanvas, 0, 0);
+                }
+
+                isCountingDown = false;
+                isCaptureModalOpen = true;
+                isPhotoUploaded = false;
+                selectedBackdropIndex = 0;
+
+                // Open Capture Modal
+                captureModal.classList.add('active');
+                captureQrOverlay.classList.remove('active');
+                captureSpinner.classList.remove('active');
+
+                // Render backdrops and composite
+                renderBackdropSelectorPills();
+                await renderCompositeCapture();
+
+                console.log("[v5.0] Photo captured. Backdrop selection ready.");
+            }
+        }, 1000);
+    }
+
+    // Upload composite photo to Google Drive via Google Apps Script Web App
+    async function uploadCaptureToGoogleDrive() {
+        if (isUploadingPhoto || isPhotoUploaded) return;
+
+        if (!captureCanvas) return;
+        isUploadingPhoto = true;
+
+        if (captureSpinner) {
+            captureSpinner.classList.add('active');
+        }
+
+        try {
+            // 1. Get Base64 JPEG data
+            const imageData = captureCanvas.toDataURL('image/jpeg', 0.92);
+
+            // 2. Check if Google Apps Script URL is configured
+            if (!driveScriptUrl) {
+                console.warn("[v5.0] No Google Apps Script URL configured in Developer Mode.");
+                showToast("⚠️ Add Drive Script URL in Dev Mode");
+                
+                // Fallback: download locally on the device
+                const link = document.createElement('a');
+                link.download = `Portal_Photo_${Date.now()}.jpg`;
+                link.href = imageData;
+                link.click();
+
+                // Show local download message on the QR overlay
+                showLocalDownloadFallback(imageData);
+                isUploadingPhoto = false;
+                isPhotoUploaded = true;
+                return;
+            }
+
+            console.log("[v5.0] Uploading photo to Google Drive via Apps Script...");
+
+            // 3. POST image data to Google Apps Script Web App
+            const response = await fetch(driveScriptUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' }, // Avoid CORS preflight on Apps Script
+                body: JSON.stringify({
+                    image: imageData,
+                    timestamp: new Date().toISOString()
+                })
+            });
+
+            const result = await response.json();
+            console.log("[v5.0] Google Drive upload result:", result);
+
+            if (result && (result.url || result.viewUrl)) {
+                const targetUrl = result.url || result.viewUrl;
+                showQrCodeForPhoto(targetUrl);
+                isPhotoUploaded = true;
+                showToast("✅ Saved to Google Drive!");
+            } else {
+                throw new Error(result.message || "Upload did not return URL");
+            }
+        } catch (err) {
+            console.error("[v5.0] Google Drive upload error:", err);
+            showToast("⚠️ Drive Upload Error (Downloading locally)");
+
+            // Fallback download
+            const imageData = captureCanvas.toDataURL('image/jpeg', 0.92);
+            const link = document.createElement('a');
+            link.download = `Portal_Photo_${Date.now()}.jpg`;
+            link.href = imageData;
+            link.click();
+
+            showLocalDownloadFallback(imageData);
+            isPhotoUploaded = true;
+        } finally {
+            if (captureSpinner) {
+                captureSpinner.classList.remove('active');
+            }
+            isUploadingPhoto = false;
+        }
+    }
+
+    // Display the QR Code pointing to the Google Drive file
+    function showQrCodeForPhoto(fileUrl) {
+        if (!captureQrOverlay || !captureQrImg) return;
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fileUrl)}`;
+        captureQrImg.src = qrUrl;
+        if (captureDirectLink) {
+            captureDirectLink.href = fileUrl;
+            captureDirectLink.textContent = "Open in Google Drive";
+        }
+        captureQrOverlay.classList.add('active');
+    }
+
+    // Fallback if Drive Script is not configured yet
+    function showLocalDownloadFallback(imageData) {
+        if (!captureQrOverlay) return;
+        if (captureDirectLink) {
+            captureDirectLink.href = imageData;
+            captureDirectLink.download = `Portal_Photo_${Date.now()}.jpg`;
+            captureDirectLink.textContent = "Download Photo to Device";
+        }
+        // Generate QR code for developer mode setup reminder
+        const helpQr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(window.location.href)}`;
+        if (captureQrImg) captureQrImg.src = helpQr;
+        captureQrOverlay.classList.add('active');
+    }
+
     // --- Manual input button listener ---
     fetchMediaBtn.addEventListener('click', () => {
         fetchMedia(contentIdInput.value);
     });
 
-    // Sound toggle button in Developer Mode
     if (soundToggleBtn) {
         soundToggleBtn.addEventListener('click', () => {
             toggleSound();
         });
     }
 
-    // Photobooth toggle button in Developer Mode
     if (photoboothToggleBtn) {
         photoboothToggleBtn.addEventListener('click', () => {
             togglePhotobooth();
@@ -811,11 +1158,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1500);
     }
 
-    // --- Global Keypad & Keyboard Listener (Pure Keypad / NFC Navigation - No Mouse Needed) ---
-    // Rule:
-    // 1. Any digit (0-9) typed automatically routes to the search bar input.
-    // 2. Any non-digit key acts as a dedicated hotkey (never types into the search bar, even if focused).
+    // --- Global Keypad & Keyboard Listener (Pure Keypad / NFC Navigation) ---
     document.addEventListener('keydown', (event) => {
+        // --- 1. CAPTURE MODAL ACTIVE NAVIGATION ---
+        if (isCaptureModalOpen) {
+            // Esc closes the modal
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeCaptureModal();
+                return;
+            }
+
+            // Enter uploads/confirms photo
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                uploadCaptureToGoogleDrive();
+                return;
+            }
+
+            // Numbers 1-9 switch backdrops instantly
+            if (event.key >= '1' && event.key <= '9') {
+                event.preventDefault();
+                const index = parseInt(event.key, 10) - 1;
+                selectBackdrop(index);
+                return;
+            }
+
+            return; // Ignore other keys while in capture modal
+        }
+
+        // --- 2. GLOBAL PORTAL NAVIGATION ---
+
+        // Hotkey: + (plus / add) starts Photobooth Photo Countdown & Capture
+        if (event.key === '+' || event.code === 'NumpadAdd') {
+            event.preventDefault();
+            startPhotoCountdown();
+            return;
+        }
+
         // Hotkey: * (asterisk / multiply) toggles Photobooth Mode ON/OFF
         if (event.key === '*' || event.code === 'NumpadMultiply') {
             event.preventDefault();
@@ -835,10 +1215,10 @@ document.addEventListener('DOMContentLoaded', () => {
             event.preventDefault();
             controlsDiv.classList.toggle('visible');
             if (controlsDiv.classList.contains('visible')) {
-                console.log("[v4.2] Developer Mode opened.");
+                console.log("[v5.0] Developer Mode opened.");
                 renderDatasetPreview();
             } else {
-                console.log("[v4.2] Developer Mode closed.");
+                console.log("[v5.0] Developer Mode closed.");
             }
             return;
         }
@@ -878,16 +1258,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Backspace removes last digit
         if (event.key === 'Backspace') {
-            if (document.activeElement !== contentIdInput) {
+            if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
                 event.preventDefault();
                 contentIdInput.value = contentIdInput.value.slice(0, -1);
             }
             return;
         }
 
-        // DIGITS (0-9): Automatically route numbers directly into the search bar without needing mouse click
+        // Digits (0-9): Automatically route numbers directly into the search bar without needing mouse click
         if (event.key >= '0' && event.key <= '9') {
-            if (document.activeElement !== contentIdInput) {
+            if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
                 event.preventDefault();
                 contentIdInput.value += event.key;
             }
@@ -901,7 +1281,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial startup
-    console.log("Portal Door v4.2 initialized.");
+    console.log("Portal Door v5.0 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();

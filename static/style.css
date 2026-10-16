@@ -638,3 +638,291 @@ button:hover {
     margin-top: 4px;
 }
 
+/* Developer Mode Drive Script Row */
+.dev-drive-script-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 0.78em;
+    color: #94a3b8;
+}
+
+.dev-drive-script-row label {
+    white-space: nowrap;
+    font-weight: bold;
+    color: #38bdf8;
+}
+
+.dev-drive-script-row input {
+    flex: 1;
+    font-size: 0.8em;
+    padding: 4px 8px;
+    width: auto;
+}
+
+/* --- Photobooth Capture Modal & Backdrop Picker --- */
+.capture-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2500;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.capture-modal.active {
+    display: flex;
+}
+
+/* Countdown Overlay */
+.capture-countdown {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 10em;
+    font-weight: 900;
+    color: #00d2ff;
+    text-shadow: 0 0 40px #00d2ff, 0 0 80px rgba(0, 210, 255, 0.8);
+    z-index: 2900;
+    pointer-events: none;
+    display: none;
+}
+
+.capture-countdown.active {
+    display: block;
+    animation: countdown-pop 0.9s ease-out infinite;
+}
+
+@keyframes countdown-pop {
+    0% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
+    30% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    80% { transform: translate(-50%, -50%) scale(0.95); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+}
+
+/* Camera Flash Effect */
+.capture-flash {
+    position: fixed;
+    inset: 0;
+    background: #ffffff;
+    z-index: 2950;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s ease-out;
+}
+
+.capture-flash.active {
+    opacity: 0.95;
+    transition: none;
+}
+
+/* Result Card */
+.capture-result-card {
+    background: rgba(10, 16, 28, 0.95);
+    border: 2px solid rgba(0, 210, 255, 0.5);
+    border-radius: 14px;
+    padding: 18px 24px;
+    max-width: 680px;
+    width: 92vw;
+    box-shadow: 0 0 40px rgba(0, 210, 255, 0.3), 0 10px 40px rgba(0, 0, 0, 0.9);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    animation: reg-fade-in 0.3s ease-out;
+}
+
+.capture-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.capture-title {
+    font-size: 1.15em;
+    font-weight: 800;
+    color: #38bdf8;
+    letter-spacing: 1px;
+}
+
+.capture-subtitle {
+    font-size: 0.78em;
+    color: #94a3b8;
+}
+
+.capture-preview-box {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: 48vh;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+    border: 1px solid rgba(0, 210, 255, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#captureCanvas {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* Spinner Overlay while uploading */
+.capture-spinner-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 10, 20, 0.85);
+    backdrop-filter: blur(8px);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    z-index: 10;
+}
+
+.capture-spinner-overlay.active {
+    display: flex;
+}
+
+.capture-spinner {
+    width: 44px;
+    height: 44px;
+    border: 4px solid rgba(0, 210, 255, 0.2);
+    border-top-color: #00d2ff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.capture-spinnerText {
+    font-size: 0.9em;
+    font-weight: bold;
+    color: #38bdf8;
+    letter-spacing: 0.5px;
+}
+
+/* QR Code Download Overlay */
+.capture-qr-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 16, 28, 0.95);
+    backdrop-filter: blur(10px);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    z-index: 15;
+    padding: 10px;
+    text-align: center;
+}
+
+.capture-qr-overlay.active {
+    display: flex;
+}
+
+.qr-heading {
+    font-size: 1.1em;
+    font-weight: 800;
+    color: #4ade80;
+    letter-spacing: 1px;
+}
+
+.qr-img-box {
+    background: #ffffff;
+    padding: 8px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5), 0 0 15px rgba(34, 197, 94, 0.3);
+    display: inline-flex;
+}
+
+.qr-img-box img {
+    position: static !important;
+    transform: none !important;
+    width: 160px !important;
+    height: 160px !important;
+    min-width: unset !important;
+    min-height: unset !important;
+    object-fit: contain !important;
+    display: block !important;
+}
+
+.qr-subtext {
+    font-size: 0.8em;
+    color: #94a3b8;
+}
+
+.qr-direct-link {
+    font-size: 0.8em;
+    color: #38bdf8;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* Backdrop Switcher Bar */
+.backdrop-selector-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    max-height: 90px;
+    overflow-y: auto;
+}
+
+.backdrop-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    font-size: 0.8em;
+    color: #cbd5e1;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.backdrop-pill:hover {
+    background: rgba(0, 210, 255, 0.12);
+    border-color: rgba(0, 210, 255, 0.4);
+}
+
+.backdrop-pill.selected {
+    background: rgba(0, 210, 255, 0.22);
+    border-color: #00d2ff;
+    color: #ffffff;
+    font-weight: bold;
+    box-shadow: 0 0 10px rgba(0, 210, 255, 0.35);
+}
+
+.backdrop-pill kbd {
+    font-size: 0.85em;
+    padding: 1px 4px;
+}
+
+.capture-footer-guide {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.78em;
+    color: #94a3b8;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 8px;
+}
+
+

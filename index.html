@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=4.2">
+    <link rel="stylesheet" href="static/style.css?v=5.0">
     <!-- Google MediaPipe for AI background removal -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -16,7 +16,7 @@
             <div class="dev-bar-actions">
                 <button id="photoboothToggleBtn" class="dev-photobooth-btn" title="Toggle Photobooth Mode (*)">📸 Photo: OFF</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v4.2</span>
+                <span class="version-badge">v5.0</span>
             </div>
         </div>
         <div class="controls-header">
@@ -30,6 +30,7 @@
                 <div class="hotkey-item"><kbd>Esc</kbd><span>Home</span></div>
                 <div class="hotkey-item"><kbd>.</kbd><span>Sound</span></div>
                 <div class="hotkey-item"><kbd>*</kbd><span>Photo</span></div>
+                <div class="hotkey-item"><kbd>+</kbd><span>Snap</span></div>
                 <div class="hotkey-item"><kbd>(</kbd><span>Fullscreen</span></div>
                 <div class="hotkey-item"><kbd>)</kbd><span>Reload</span></div>
                 <div class="hotkey-item"><kbd>Enter</kbd><span>Trigger</span></div>
@@ -41,6 +42,11 @@
                 <div class="hotkey-item"><kbd>FN + +/Enter</kbd><span>Brightness</span></div>
                 <div class="hotkey-item"><kbd>FN + Esc</kbd><span>Calculator</span></div>
             </div>
+        </div>
+
+        <div class="dev-drive-script-row">
+            <label for="scriptUrlInput">Drive Script URL:</label>
+            <input type="text" id="scriptUrlInput" placeholder="Paste Google Apps Script Web App URL..." autocomplete="off">
         </div>
 
         <div class="dev-dataset-container">
@@ -66,8 +72,50 @@
     <!-- Hidden video element for raw webcam capture -->
     <video id="webcamVideo" playsinline muted style="display: none;"></video>
 
+    <!-- Photobooth Photo Capture Modal & Backdrop Picker -->
+    <div id="captureModal" class="capture-modal">
+        <div id="captureCountdown" class="capture-countdown"></div>
+        <div id="captureFlash" class="capture-flash"></div>
+        
+        <div id="captureResultCard" class="capture-result-card">
+            <div class="capture-header">
+                <span class="capture-title">📸 PHOTOBOOTH CAPTURE</span>
+                <span class="capture-subtitle">Press number to switch backdrop • Enter to save to Drive</span>
+            </div>
+            
+            <div class="capture-preview-box">
+                <canvas id="captureCanvas"></canvas>
+                
+                <div id="captureSpinner" class="capture-spinner-overlay">
+                    <div class="capture-spinner"></div>
+                    <span class="capture-spinnerText">Uploading to Google Drive...</span>
+                </div>
+                
+                <div id="captureQrOverlay" class="capture-qr-overlay">
+                    <span class="qr-heading">YOUR PHOTO IS SAVED!</span>
+                    <div class="qr-img-box">
+                        <img id="captureQrImg" src="" alt="Scan to download" />
+                    </div>
+                    <span class="qr-subtext">Scan with your phone to download</span>
+                    <a id="captureDirectLink" class="qr-direct-link" href="#" target="_blank" rel="noopener">Open in Google Drive</a>
+                </div>
+            </div>
+
+            <!-- Backdrop Switcher Bar -->
+            <div id="backdropSelectorBar" class="backdrop-selector-bar">
+                <!-- Dynamically populated from Google Sheet 'Photobooth' tab -->
+            </div>
+
+            <div class="capture-footer-guide">
+                <span><kbd>1-9</kbd> Change Backdrop</span>
+                <span id="captureConfirmHint"><kbd>Enter</kbd> Save to Drive</span>
+                <span><kbd>Esc</kbd> Close</span>
+            </div>
+        </div>
+    </div>
+
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=4.2"></script>
+    <script src="static/script.js?v=5.0"></script>
 </body>
 </html>
