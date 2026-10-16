@@ -101,11 +101,14 @@ button:hover {
 /* REMOVED: #mediaDisplay.media-display-active class */
 
 #mediaDisplay img,
-#mediaDisplay video {
-    width: 100%; /* Forces the media to take 100% of its parent's width */
-    height: 100%; /* Forces the media to take 100% of its parent's height */
+#mediaDisplay video,
+#mediaDisplay iframe {
+    width: 100vw; /* Forces the media to take 100% of viewport width */
+    height: 100vh; /* Forces the media to take 100% of viewport height */
     object-fit: cover; /* Ensures the entire media fills the container, cropping if necessary */
+    border: none;
     display: block; /* Remove extra space below images/videos */
+    pointer-events: none; /* Prevent accidental clicks pausing background video */
 }
 
 /* Styling for the transition video overlay */
