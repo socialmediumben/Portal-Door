@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v5.2
+// static/script.js - Portal Door v5.3
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -246,7 +246,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (targetState === isPhotoboothActive) return;
 
         if (targetState) {
-            showToast("📸 Initializing Camera & AI...");
             try {
                 initSelfieSegmentation();
 
@@ -273,10 +272,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 isProcessingFrame = false;
                 renderPhotoboothLoop();
 
-                showToast("📸 Photobooth Mode: ON");
-                console.log("[v5.1] Photobooth Mode activated.");
+                showToast("Photo On");
+                console.log("[v5.3] Photobooth Mode activated.");
             } catch (err) {
-                console.error("[v5.1] Failed to start Photobooth camera:", err);
+                console.error("[v5.3] Failed to start Photobooth camera:", err);
                 showToast("⚠️ Camera Error: " + (err.name || "Access Denied"));
                 isPhotoboothActive = false;
                 updatePhotoboothVisibility();
@@ -309,8 +308,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 photoboothToggleBtn.classList.remove('active');
             }
 
-            showToast("📸 Photobooth Mode: OFF");
-            console.log("[v5.1] Photobooth Mode deactivated.");
+            showToast("Photo Off");
+            console.log("[v5.3] Photobooth Mode deactivated.");
         }
     }
 
@@ -867,8 +866,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!captureCanvas) return;
         const ctx = captureCanvas.getContext('2d');
 
-        const width = 1280;
-        const height = 720;
+        const width = 1080;
+        const height = 1620; // 3:2 Portrait Aspect Ratio (1080x1620)
         if (captureCanvas.width !== width || captureCanvas.height !== height) {
             captureCanvas.width = width;
             captureCanvas.height = height;
@@ -885,7 +884,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
             const img = await preloadImage(resolvedUrl);
             if (img && img._corsSafe) {
-                // Draw image scaled to cover canvas
+                // Draw image scaled to cover the portrait canvas
                 const hRatio = width / img.width;
                 const vRatio = height / img.height;
                 const ratio = Math.max(hRatio, vRatio);
@@ -894,7 +893,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.drawImage(img, 0, 0, img.width, img.height, centerShiftX, centerShiftY, img.width * ratio, img.height * ratio);
                 backdropDrawn = true;
             } else if (img === null) {
-                console.warn(`[v5.2] Backdrop "${item.title}" blocked by host CORS policy. Using portal theme.`);
+                console.warn(`[v5.3] Backdrop "${item.title}" blocked by host CORS policy. Using portal theme.`);
             }
         }
 
@@ -923,44 +922,49 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.stroke();
             }
 
-            // Radial portal glow behind person
-            const radial = ctx.createRadialGradient(width / 2, height / 2, 80, width / 2, height / 2, 500);
-            radial.addColorStop(0, 'rgba(0, 210, 255, 0.25)');
-            radial.addColorStop(0.6, 'rgba(168, 85, 247, 0.15)');
+            // Radial portal glow behind person (Brand colors: light blue + neon orange)
+            const radial = ctx.createRadialGradient(width / 2, height / 2, 80, width / 2, height / 2, 600);
+            radial.addColorStop(0, 'rgba(0, 210, 255, 0.3)');
+            radial.addColorStop(0.55, 'rgba(255, 107, 0, 0.22)');
             radial.addColorStop(1, 'rgba(0, 0, 0, 0)');
             ctx.fillStyle = radial;
             ctx.fillRect(0, 0, width, height);
 
             // Watermark indicating theme
             ctx.save();
-            ctx.font = 'bold 32px Arial, sans-serif';
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.font = 'bold 36px Arial, sans-serif';
+            ctx.fillStyle = 'rgba(255, 157, 66, 0.45)';
+            ctx.shadowColor = 'rgba(255, 107, 0, 0.8)';
+            ctx.shadowBlur = 8;
             ctx.textAlign = 'center';
-            ctx.fillText(`PORTAL: ${backdropTitle.toUpperCase()}`, width / 2, height - 70);
+            ctx.fillText(`PORTAL: ${backdropTitle.toUpperCase()}`, width / 2, height - 85);
             ctx.restore();
         }
 
-        // 2. Draw Person Cutout on top
+        // 2. Draw Person Cutout on top (portrait framing anchored to bottom)
         if (capturedPersonCanvas && capturedPersonCanvas.width > 0) {
             const hRatio = width / capturedPersonCanvas.width;
             const vRatio = height / capturedPersonCanvas.height;
             const ratio = Math.max(hRatio, vRatio);
-            const centerShiftX = (width - capturedPersonCanvas.width * ratio) / 2;
-            const centerShiftY = (height - capturedPersonCanvas.height * ratio) / 2;
+            const drawW = capturedPersonCanvas.width * ratio;
+            const drawH = capturedPersonCanvas.height * ratio;
+            const centerShiftX = (width - drawW) / 2;
+            const centerShiftY = height - drawH; // Anchor person to bottom of portrait frame
             ctx.drawImage(
                 capturedPersonCanvas,
                 0, 0, capturedPersonCanvas.width, capturedPersonCanvas.height,
-                centerShiftX, centerShiftY, capturedPersonCanvas.width * ratio, capturedPersonCanvas.height * ratio
+                centerShiftX, centerShiftY, drawW, drawH
             );
         }
 
         // 3. Sci-Fi Portal Watermark
         ctx.save();
-        ctx.font = 'bold 22px Arial, sans-serif';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-        ctx.shadowColor = 'rgba(0, 210, 255, 0.8)';
-        ctx.shadowBlur = 8;
-        ctx.fillText('PORTAL DOOR PHOTOBOOTH', 30, height - 30);
+        ctx.font = 'bold 24px Arial, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.shadowColor = 'rgba(0, 210, 255, 0.9)';
+        ctx.shadowBlur = 10;
+        ctx.textAlign = 'center';
+        ctx.fillText('PORTAL DOOR PHOTOBOOTH', width / 2, height - 35);
         ctx.restore();
     }
 
@@ -1092,32 +1096,35 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 imageData = captureCanvas.toDataURL('image/jpeg', 0.92);
             } catch (canvasErr) {
-                console.error("[v5.2] Primary canvas toDataURL failed:", canvasErr);
-                // Emergency clean canvas export: composite person cutout over gradient
+                console.error("[v5.3] Primary canvas toDataURL failed:", canvasErr);
+                // Emergency clean canvas export: composite person cutout over gradient (1080x1620 portrait)
                 try {
                     const cleanCanvas = document.createElement('canvas');
-                    cleanCanvas.width = 1280;
-                    cleanCanvas.height = 720;
+                    cleanCanvas.width = 1080;
+                    cleanCanvas.height = 1620;
                     const cCtx = cleanCanvas.getContext('2d');
-                    const grad = cCtx.createLinearGradient(0, 0, 1280, 720);
+                    const grad = cCtx.createLinearGradient(0, 0, 1080, 1620);
                     grad.addColorStop(0, '#020617');
-                    grad.addColorStop(1, '#0284c7');
+                    grad.addColorStop(0.5, '#0f172a');
+                    grad.addColorStop(1, '#ff6b00');
                     cCtx.fillStyle = grad;
-                    cCtx.fillRect(0, 0, 1280, 720);
+                    cCtx.fillRect(0, 0, 1080, 1620);
                     if (capturedPersonCanvas && capturedPersonCanvas.width > 0) {
-                        const ratio = Math.max(1280 / capturedPersonCanvas.width, 720 / capturedPersonCanvas.height);
+                        const ratio = Math.max(1080 / capturedPersonCanvas.width, 1620 / capturedPersonCanvas.height);
+                        const drawW = capturedPersonCanvas.width * ratio;
+                        const drawH = capturedPersonCanvas.height * ratio;
                         cCtx.drawImage(
                             capturedPersonCanvas,
-                            (1280 - capturedPersonCanvas.width * ratio) / 2,
-                            (720 - capturedPersonCanvas.height * ratio) / 2,
-                            capturedPersonCanvas.width * ratio,
-                            capturedPersonCanvas.height * ratio
+                            (1080 - drawW) / 2,
+                            1620 - drawH,
+                            drawW,
+                            drawH
                         );
                     }
                     imageData = cleanCanvas.toDataURL('image/jpeg', 0.92);
-                    console.log("[v5.2] Emergency clean canvas export generated successfully.");
+                    console.log("[v5.3] Emergency clean portrait canvas export generated successfully.");
                 } catch (fallbackErr) {
-                    console.error("[v5.2] Emergency canvas export failed:", fallbackErr);
+                    console.error("[v5.3] Emergency canvas export failed:", fallbackErr);
                 }
             }
 
@@ -1143,7 +1150,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            console.log("[v5.2] Uploading photo to Google Drive via Apps Script...");
+            console.log("[v5.3] Uploading photo to Google Drive via Apps Script...");
 
             // 3. POST image data to Google Apps Script Web App
             const response = await fetch(driveScriptUrl, {
@@ -1156,18 +1163,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const result = await response.json();
-            console.log("[v5.2] Google Drive upload result:", result);
+            console.log("[v5.3] Google Drive upload result:", result);
 
             if (result && (result.url || result.viewUrl)) {
                 const targetUrl = result.url || result.viewUrl;
                 showQrCodeForPhoto(targetUrl);
                 isPhotoUploaded = true;
-                showToast("✅ Saved to Google Drive!");
+                showToast("🚀 Saved to Google Drive!");
             } else {
                 throw new Error(result.message || "Upload did not return URL");
             }
         } catch (err) {
-            console.error("[v5.2] Google Drive upload error:", err);
+            console.error("[v5.3] Google Drive upload error:", err);
             showToast("⚠️ Drive Upload Error (Downloading locally)");
 
             // Fallback download using already-extracted imageData
@@ -1363,7 +1370,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial startup
-    console.log("Portal Door v5.2 initialized.");
+    console.log("Portal Door v5.3 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
