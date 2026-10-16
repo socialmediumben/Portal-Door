@@ -70,15 +70,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Helper: Normalize Google Drive & Relative URLs ---
-    function normalizeMediaUrl(url) {
+    function normalizeMediaUrl(url, type) {
         if (!url) return '';
         let clean = url.trim();
 
-        // Convert Google Drive share link to direct download/stream link
+        // Convert Google Drive share link
         const driveMatch = clean.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ||
                            clean.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/) ||
                            clean.match(/drive\.google\.com\/uc\?id=([a-zA-Z0-9_-]+)/);
         if (driveMatch && driveMatch[1]) {
+            if (type === 'image') {
+                return `https://lh3.googleusercontent.com/d/${driveMatch[1]}`;
+            }
             return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
         }
 
@@ -96,18 +99,21 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Try Google Sheets CSV
         if (GOOGLE_SHEET_CSV_URL) {
             try {
-                console.log("Attempting to fetch dataset from Google Sheets...");
+                console.log("[v2.1] Fetching dataset from Google Sheets...");
                 const response = await fetch(GOOGLE_SHEET_CSV_URL);
                 if (response.ok) {
                     const csvText = await response.text();
                     const rows = parseCSV(csvText);
 
                     if (rows.length >= 2) {
-                        const headers = rows[0].map(h => h.toLowerCase().replace(/[^a-z0-9_]/g, ''));
-                        const idIdx = headers.indexOf('id');
-                        const titleIdx = headers.indexOf('title');
-                        const typeIdx = headers.indexOf('type');
-                        const pathIdx = headers.indexOf('filepath') !== -1 ? headers.indexOf('filepath') : headers.indexOf('path');
+                        let idIdx = -1, titleIdx = -1, typeIdx = -1, pathIdx = -1;
+                        for (let i = 0; i < rows[0].length; i++) {
+                            const norm = rows[0][i].toLowerCase().replace(/[^a-z0-9]/g, '');
+                            if (['id', 'contentid', 'cardid', 'uid'].includes(norm)) idIdx = i;
+                            else if (['title', 'name'].includes(norm)) titleIdx = i;
+                            else if (['type', 'mediatype'].includes(norm)) typeIdx = i;
+                            else if (norm.includes('path') || norm.includes('file') || norm.includes('url') || norm.includes('link') || norm.includes('media')) pathIdx = i;
+                        }
 
                         if (idIdx !== -1) {
                             const newDb = {};
@@ -124,21 +130,22 @@ document.addEventListener('DOMContentLoaded', () => {
                                 // Auto-detect type if omitted
                                 if (!type) {
                                     if (getYouTubeVideoId(rawPath)) type = 'youtube';
-                                    else if (/\.(jpe?g|png|webp|gif)$/i.test(rawPath)) type = 'image';
+                                    else if (/\.(jpe?g|png|webp|gif)($|\?)/i.test(rawPath)) type = 'image';
                                     else type = 'video';
                                 }
 
                                 newDb[id] = { id, title, type, file_path: rawPath };
+                                console.log(`[v2.1] Registered card "${id}": title="${title}", type="${type}", path="${rawPath}"`);
                             }
                             mediaDatabase = newDb;
                             loadedFromSheet = true;
-                            console.log(`Loaded ${Object.keys(mediaDatabase).length} media items from Google Sheets.`);
+                            console.log(`[v2.1] Successfully loaded ${Object.keys(mediaDatabase).length} media items from Google Sheets.`);
                             return true;
                         }
                     }
                 }
             } catch (sheetErr) {
-                console.warn("Could not load from Google Sheets (will try local fallback):", sheetErr);
+                console.warn("[v2.1] Could not load from Google Sheets (will try local fallback):", sheetErr);
             }
         }
 
@@ -234,14 +241,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const rawPath = data.file_path || '';
             const ytId = getYouTubeVideoId(rawPath);
-            const resolvedPath = normalizeMediaUrl(rawPath);
+            const resolvedPath = normalizeMediaUrl(rawPath, data.type);
+            console.log(`[v2.1] Playing card ID: ${cleanId}, title: "${data.title}", type: "${data.type}", resolvedPath: "${resolvedPath}"`);
 
             // 3. Load media behind the closed door
             await new Promise((resolve, reject) => {
                 // CASE A: YouTube Video
                 if (data.type === 'youtube' || ytId) {
                     const videoId = ytId || rawPath.trim();
-                    console.log(`[v2.0] Embedding YouTube video ID: ${videoId}`);
+                    console.log(`[v2.1] Embedding YouTube video ID: ${videoId}`);
                     const iframe = document.createElement('iframe');
                     iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}`;
                     iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
@@ -398,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial startup
-    console.log("Portal Door v2.0 initialized.");
+    console.log("Portal Door v2.1 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     loadMediaDatabase();
