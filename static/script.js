@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v5.1
+// static/script.js - Portal Door v5.2
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -840,23 +840,23 @@ document.addEventListener('DOMContentLoaded', () => {
     function preloadImage(url) {
         return new Promise((resolve) => {
             if (!url) return resolve(null);
-            if (loadedBackdropImages[url]) return resolve(loadedBackdropImages[url]);
+            if (loadedBackdropImages[url] !== undefined) {
+                return resolve(loadedBackdropImages[url]);
+            }
 
             const img = new Image();
             img.crossOrigin = "anonymous";
             img.onload = () => {
+                img._corsSafe = true;
                 loadedBackdropImages[url] = img;
                 resolve(img);
             };
             img.onerror = () => {
-                console.warn("[v5.1] Failed to load backdrop with CORS, trying without:", url);
-                const fallbackImg = new Image();
-                fallbackImg.onload = () => {
-                    loadedBackdropImages[url] = fallbackImg;
-                    resolve(fallbackImg);
-                };
-                fallbackImg.onerror = () => resolve(null);
-                fallbackImg.src = url;
+                console.warn("[v5.2] Backdrop image failed CORS anonymous loading:", url);
+                // CRUCIAL: Do NOT load image without crossOrigin, as drawing non-CORS images
+                // permanently taints the HTML5 canvas and prevents toDataURL export!
+                loadedBackdropImages[url] = null;
+                resolve(null);
             };
             img.src = url;
         });
@@ -878,11 +878,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Draw Backdrop
         let backdropDrawn = false;
+        let backdropTitle = "Sci-Fi Portal";
         if (photoboothBackdrops.length > 0 && photoboothBackdrops[selectedBackdropIndex]) {
             const item = photoboothBackdrops[selectedBackdropIndex];
+            backdropTitle = item.title || "Portal";
             const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
             const img = await preloadImage(resolvedUrl);
-            if (img) {
+            if (img && img._corsSafe) {
                 // Draw image scaled to cover canvas
                 const hRatio = width / img.width;
                 const vRatio = height / img.height;
@@ -891,16 +893,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 const centerShiftY = (height - img.height * ratio) / 2;
                 ctx.drawImage(img, 0, 0, img.width, img.height, centerShiftX, centerShiftY, img.width * ratio, img.height * ratio);
                 backdropDrawn = true;
+            } else if (img === null) {
+                console.warn(`[v5.2] Backdrop "${item.title}" blocked by host CORS policy. Using portal theme.`);
             }
         }
 
-        // Fallback backdrop gradient if image fails
+        // Fallback backdrop gradient & sci-fi grid if image fails CORS or loading
         if (!backdropDrawn) {
             const grad = ctx.createLinearGradient(0, 0, width, height);
-            grad.addColorStop(0, '#0f172a');
+            grad.addColorStop(0, '#020617');
+            grad.addColorStop(0.5, '#0f172a');
             grad.addColorStop(1, '#0284c7');
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, width, height);
+
+            // Cyber grid lines
+            ctx.strokeStyle = 'rgba(0, 210, 255, 0.12)';
+            ctx.lineWidth = 1.5;
+            for (let x = 0; x < width; x += 80) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+            for (let y = 0; y < height; y += 80) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+
+            // Radial portal glow behind person
+            const radial = ctx.createRadialGradient(width / 2, height / 2, 80, width / 2, height / 2, 500);
+            radial.addColorStop(0, 'rgba(0, 210, 255, 0.25)');
+            radial.addColorStop(0.6, 'rgba(168, 85, 247, 0.15)');
+            radial.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = radial;
+            ctx.fillRect(0, 0, width, height);
+
+            // Watermark indicating theme
+            ctx.save();
+            ctx.font = 'bold 32px Arial, sans-serif';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.textAlign = 'center';
+            ctx.fillText(`PORTAL: ${backdropTitle.toUpperCase()}`, width / 2, height - 70);
+            ctx.restore();
         }
 
         // 2. Draw Person Cutout on top
@@ -935,7 +972,10 @@ document.addEventListener('DOMContentLoaded', () => {
         photoboothBackdrops.forEach((item, index) => {
             const pill = document.createElement('div');
             pill.className = `backdrop-pill ${index === selectedBackdropIndex ? 'selected' : ''}`;
-            pill.innerHTML = `<kbd>${index + 1}</kbd> <span>${item.title}</span>`;
+            const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
+            const isCorsBlocked = loadedBackdropImages[resolvedUrl] === null;
+            const tag = isCorsBlocked ? ' ⚠️' : '';
+            pill.innerHTML = `<kbd>${index + 1}</kbd> <span>${item.title}${tag}</span>`;
             pill.addEventListener('click', () => {
                 selectBackdrop(index);
             });
@@ -948,7 +988,12 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedBackdropIndex = index;
         renderBackdropSelectorPills();
         renderCompositeCapture();
-        console.log(`[v5.1] Switched to backdrop #${index + 1}: ${photoboothBackdrops[index]?.title}`);
+        const item = photoboothBackdrops[index];
+        const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
+        if (loadedBackdropImages[resolvedUrl] === null) {
+            showToast(`⚠️ "${item.title}" host blocks direct export. Cyber portal used!`);
+        }
+        console.log(`[v5.2] Switched to backdrop #${index + 1}: ${item?.title}`);
     }
 
     // Close the capture modal and return to portal view
@@ -1040,13 +1085,49 @@ document.addEventListener('DOMContentLoaded', () => {
             captureSpinner.classList.add('active');
         }
 
+        let imageData = null;
+
         try {
-            // 1. Get Base64 JPEG data
-            const imageData = captureCanvas.toDataURL('image/jpeg', 0.92);
+            // 1. Get Base64 JPEG data from canvas
+            try {
+                imageData = captureCanvas.toDataURL('image/jpeg', 0.92);
+            } catch (canvasErr) {
+                console.error("[v5.2] Primary canvas toDataURL failed:", canvasErr);
+                // Emergency clean canvas export: composite person cutout over gradient
+                try {
+                    const cleanCanvas = document.createElement('canvas');
+                    cleanCanvas.width = 1280;
+                    cleanCanvas.height = 720;
+                    const cCtx = cleanCanvas.getContext('2d');
+                    const grad = cCtx.createLinearGradient(0, 0, 1280, 720);
+                    grad.addColorStop(0, '#020617');
+                    grad.addColorStop(1, '#0284c7');
+                    cCtx.fillStyle = grad;
+                    cCtx.fillRect(0, 0, 1280, 720);
+                    if (capturedPersonCanvas && capturedPersonCanvas.width > 0) {
+                        const ratio = Math.max(1280 / capturedPersonCanvas.width, 720 / capturedPersonCanvas.height);
+                        cCtx.drawImage(
+                            capturedPersonCanvas,
+                            (1280 - capturedPersonCanvas.width * ratio) / 2,
+                            (720 - capturedPersonCanvas.height * ratio) / 2,
+                            capturedPersonCanvas.width * ratio,
+                            capturedPersonCanvas.height * ratio
+                        );
+                    }
+                    imageData = cleanCanvas.toDataURL('image/jpeg', 0.92);
+                    console.log("[v5.2] Emergency clean canvas export generated successfully.");
+                } catch (fallbackErr) {
+                    console.error("[v5.2] Emergency canvas export failed:", fallbackErr);
+                }
+            }
+
+            if (!imageData) {
+                throw new Error("Failed to export image from canvas");
+            }
 
             // 2. Check if Google Apps Script URL is configured
             if (!driveScriptUrl) {
-                console.warn("[v5.1] No Google Apps Script URL configured in Developer Mode.");
+                console.warn("[v5.2] No Google Apps Script URL configured in Developer Mode.");
                 showToast("⚠️ Add Drive Script URL in Dev Mode");
                 
                 // Fallback: download locally on the device
@@ -1062,7 +1143,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            console.log("[v5.1] Uploading photo to Google Drive via Apps Script...");
+            console.log("[v5.2] Uploading photo to Google Drive via Apps Script...");
 
             // 3. POST image data to Google Apps Script Web App
             const response = await fetch(driveScriptUrl, {
@@ -1075,7 +1156,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const result = await response.json();
-            console.log("[v5.1] Google Drive upload result:", result);
+            console.log("[v5.2] Google Drive upload result:", result);
 
             if (result && (result.url || result.viewUrl)) {
                 const targetUrl = result.url || result.viewUrl;
@@ -1086,17 +1167,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(result.message || "Upload did not return URL");
             }
         } catch (err) {
-            console.error("[v5.1] Google Drive upload error:", err);
+            console.error("[v5.2] Google Drive upload error:", err);
             showToast("⚠️ Drive Upload Error (Downloading locally)");
 
-            // Fallback download
-            const imageData = captureCanvas.toDataURL('image/jpeg', 0.92);
-            const link = document.createElement('a');
-            link.download = `Portal_Photo_${Date.now()}.jpg`;
-            link.href = imageData;
-            link.click();
-
-            showLocalDownloadFallback(imageData);
+            // Fallback download using already-extracted imageData
+            if (imageData) {
+                const link = document.createElement('a');
+                link.download = `Portal_Photo_${Date.now()}.jpg`;
+                link.href = imageData;
+                link.click();
+                showLocalDownloadFallback(imageData);
+            }
             isPhotoUploaded = true;
         } finally {
             if (captureSpinner) {
@@ -1282,7 +1363,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial startup
-    console.log("Portal Door v5.1 initialized.");
+    console.log("Portal Door v5.2 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
