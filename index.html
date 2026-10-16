@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=5.4">
+    <link rel="stylesheet" href="static/style.css?v=5.5">
     <!-- Google MediaPipe for AI background removal -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -16,7 +16,7 @@
             <div class="dev-bar-actions">
                 <button id="photoboothToggleBtn" class="dev-photobooth-btn" title="Toggle Photobooth Mode (*)">📸 Photo: OFF</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v5.4</span>
+                <span class="version-badge">v5.5</span>
             </div>
         </div>
         <div class="controls-header">
@@ -72,14 +72,21 @@
     <!-- Hidden video element for raw webcam capture -->
     <video id="webcamVideo" playsinline muted style="display: none;"></video>
 
+    <!-- Fullscreen Visual Countdown & Flash Overlays (Outside modal so visible during live camera) -->
+    <div id="captureCountdown" class="capture-countdown"></div>
+    <div id="captureFlash" class="capture-flash"></div>
+
     <!-- Photobooth Photo Capture Modal & Backdrop Picker -->
     <div id="captureModal" class="capture-modal">
-        <div id="captureCountdown" class="capture-countdown"></div>
-        <div id="captureFlash" class="capture-flash"></div>
-        
         <div id="captureResultCard" class="capture-result-card">
             <div class="capture-header">
-                <span class="capture-title">📸 PHOTOBOOTH CAPTURE</span>
+                <div class="capture-header-top">
+                    <span class="capture-title">📸 PHOTOBOOTH CAPTURE</span>
+                    <div id="captureInactivityBadge" class="capture-inactivity-badge" title="Auto-resets after inactivity">
+                        <span class="timer-icon">⏱️</span>
+                        <span id="captureTimerText" class="timer-countdown">90s</span>
+                    </div>
+                </div>
                 <span class="capture-subtitle">Press number to switch backdrop • Enter to save to Drive</span>
             </div>
             
@@ -116,6 +123,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=5.4"></script>
+    <script src="static/script.js?v=5.5"></script>
 </body>
 </html>

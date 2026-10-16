@@ -679,39 +679,45 @@ button:hover {
     display: flex;
 }
 
-/* Countdown Overlay */
+/* Fullscreen Countdown Overlay */
 .capture-countdown {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 10em;
+    font-size: clamp(8rem, 22vw, 18rem);
     font-weight: 900;
+    font-family: system-ui, -apple-system, sans-serif;
     color: #00d2ff;
-    text-shadow: 0 0 40px #00d2ff, 0 0 80px rgba(0, 210, 255, 0.8);
-    z-index: 2900;
+    text-shadow: 0 0 35px #00d2ff, 0 0 70px rgba(0, 210, 255, 0.95), 0 0 110px rgba(255, 107, 0, 0.75);
+    z-index: 3500;
     pointer-events: none;
     display: none;
+    user-select: none;
+    line-height: 1;
 }
 
 .capture-countdown.active {
     display: block;
-    animation: countdown-pop 0.9s ease-out infinite;
+}
+
+.capture-countdown.anim-pop {
+    animation: countdown-pop 0.95s cubic-bezier(0.15, 0.85, 0.35, 1.2) forwards;
 }
 
 @keyframes countdown-pop {
-    0% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
-    30% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-    80% { transform: translate(-50%, -50%) scale(0.95); opacity: 1; }
-    100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+    0% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; filter: blur(6px); }
+    18% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; filter: blur(0px); }
+    75% { transform: translate(-50%, -50%) scale(0.98); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(0.85); opacity: 0; }
 }
 
-/* Camera Flash Effect */
+/* Fullscreen Camera Flash Effect */
 .capture-flash {
     position: fixed;
     inset: 0;
     background: #ffffff;
-    z-index: 2950;
+    z-index: 3600;
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.4s ease-out;
@@ -743,11 +749,59 @@ button:hover {
     gap: 2px;
 }
 
+.capture-header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .capture-title {
     font-size: 1.15em;
     font-weight: 800;
     color: #38bdf8;
     letter-spacing: 1px;
+}
+
+.capture-inactivity-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    background: rgba(255, 107, 0, 0.12);
+    border: 1px solid rgba(255, 107, 0, 0.45);
+    border-radius: 14px;
+    font-size: 0.82em;
+    font-weight: 700;
+    color: #ff9d42;
+    letter-spacing: 0.5px;
+    transition: all 0.25s ease;
+    user-select: none;
+}
+
+.capture-inactivity-badge .timer-icon {
+    font-size: 0.95em;
+}
+
+.capture-inactivity-badge .timer-countdown {
+    font-family: monospace;
+    font-size: 1.05em;
+    min-width: 28px;
+    text-align: right;
+    font-weight: 800;
+}
+
+.capture-inactivity-badge.urgent {
+    background: rgba(255, 107, 0, 0.3);
+    border-color: #ff6b00;
+    color: #ffffff;
+    box-shadow: 0 0 14px rgba(255, 107, 0, 0.8);
+    animation: badge-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes badge-pulse {
+    0% { transform: scale(1); box-shadow: 0 0 8px rgba(255, 107, 0, 0.5); }
+    100% { transform: scale(1.06); box-shadow: 0 0 18px rgba(255, 107, 0, 0.95); }
 }
 
 .capture-subtitle {

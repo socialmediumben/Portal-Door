@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v5.4
+// static/script.js - Portal Door v5.5
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -27,6 +27,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const captureDirectLink = document.getElementById('captureDirectLink');
     const backdropSelectorBar = document.getElementById('backdropSelectorBar');
     const captureConfirmHint = document.getElementById('captureConfirmHint');
+    const captureInactivityBadge = document.getElementById('captureInactivityBadge');
+    const captureTimerText = document.getElementById('captureTimerText');
 
     // Google Sheet CSV export base URL (spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0)
     const GOOGLE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/gviz/tq?tqx=out:csv";
@@ -68,8 +70,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let loadedBackdropImages = {};
     let activeSceneBackdrop = null; // Option "0 (Your Backdrop)" if not blocked by CORS
     let currentBackdropsList = []; // Merged list of available backdrops
-    let captureInactivityTimeout = null;
-    const CAPTURE_TIMEOUT_MS = 90000; // 90 seconds timeout returning to home screen
+    let captureInactivityInterval = null;
+    let captureRemainingSeconds = 90; // 90 seconds timeout returning to home screen
 
     // Google Drive Web App Script URL (default configured from user deployment, overridable in Developer Mode)
     const DEFAULT_DRIVE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw8sI54Tsza9NwwLd-Id3DgGBg69L4N0VxwSp9d3_dryLdSB5CvmPGtPpzt2uymKRjwcQ/exec";
@@ -885,17 +887,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Renders the combined composite on #captureCanvas
-    // --- Inactivity Timeout for Photobooth Capture Module (90 seconds) ---
+    // --- Inactivity Timeout for Photobooth Capture Module (90 seconds live countdown) ---
+    function updateInactivityBadgeUI() {
+        if (captureTimerText) {
+            captureTimerText.textContent = `${captureRemainingSeconds}s`;
+        }
+        if (captureInactivityBadge) {
+            if (captureRemainingSeconds <= 15) {
+                captureInactivityBadge.classList.add('urgent');
+            } else {
+                captureInactivityBadge.classList.remove('urgent');
+            }
+        }
+    }
+
     function startCaptureInactivityTimer() {
         clearCaptureInactivityTimer();
-        captureInactivityTimeout = setTimeout(async () => {
-            if (isCaptureModalOpen) {
-                console.log("[v5.4] 90s Photobooth inactivity timeout reached. Returning to Home Screen.");
-                showToast("Returning Home");
-                closeCaptureModal();
-                await returnToHomeScreen();
+        captureRemainingSeconds = 90;
+        updateInactivityBadgeUI();
+
+        captureInactivityInterval = setInterval(async () => {
+            captureRemainingSeconds--;
+            updateInactivityBadgeUI();
+
+            if (captureRemainingSeconds <= 0) {
+                clearCaptureInactivityTimer();
+                if (isCaptureModalOpen) {
+                    console.log("[v5.5] 90s Photobooth inactivity timeout reached. Returning to Home Screen.");
+                    showToast("Returning Home");
+                    closeCaptureModal();
+                    await returnToHomeScreen();
+                }
             }
-        }, CAPTURE_TIMEOUT_MS);
+        }, 1000);
     }
 
     function resetCaptureInactivityTimer() {
@@ -905,9 +929,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function clearCaptureInactivityTimer() {
-        if (captureInactivityTimeout) {
-            clearTimeout(captureInactivityTimeout);
-            captureInactivityTimeout = null;
+        if (captureInactivityInterval) {
+            clearInterval(captureInactivityInterval);
+            captureInactivityInterval = null;
+        }
+        if (captureInactivityBadge) {
+            captureInactivityBadge.classList.remove('urgent');
         }
     }
 
@@ -1166,7 +1193,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (captureSpinner) captureSpinner.classList.remove('active');
         if (captureQrOverlay) captureQrOverlay.classList.remove('active');
         if (captureFlash) captureFlash.classList.remove('active');
-        if (captureCountdown) captureCountdown.classList.remove('active');
+        if (captureCountdown) {
+            captureCountdown.classList.remove('active');
+            captureCountdown.classList.remove('anim-pop');
+        }
 
         updatePhotoboothVisibility();
         resumeActiveMedia();
@@ -1189,18 +1219,29 @@ document.addEventListener('DOMContentLoaded', () => {
             captureCountdown.classList.add('active');
         }
 
+        function triggerCountdownPop(val) {
+            if (!captureCountdown) return;
+            captureCountdown.textContent = val;
+            captureCountdown.classList.remove('anim-pop');
+            void captureCountdown.offsetWidth; // Force reflow to re-trigger pop animation cleanly
+            captureCountdown.classList.add('anim-pop');
+        }
+
         let count = 3;
-        captureCountdown.textContent = count;
+        triggerCountdownPop(count);
         playBeep(880, 0.15);
 
         const timer = setInterval(async () => {
             count--;
             if (count > 0) {
-                captureCountdown.textContent = count;
+                triggerCountdownPop(count);
                 playBeep(880, 0.15);
             } else {
                 clearInterval(timer);
-                captureCountdown.classList.remove('active');
+                if (captureCountdown) {
+                    captureCountdown.classList.remove('active');
+                    captureCountdown.classList.remove('anim-pop');
+                }
                 playBeep(1320, 0.35); // higher confirmation pitch
 
                 // Camera flash
@@ -1243,7 +1284,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Start 90-second inactivity timeout
                 startCaptureInactivityTimer();
 
-                console.log(`[v5.4] Photo captured. Backdrop selection ready (${currentBackdropsList.length} options).`);
+                console.log(`[v5.5] Photo captured. Backdrop selection ready (${currentBackdropsList.length} options).`);
             }
         }, 1000);
     }
@@ -1559,7 +1600,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial startup
-    console.log("Portal Door v5.4 initialized.");
+    console.log("Portal Door v5.5 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
