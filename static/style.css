@@ -679,26 +679,39 @@ button:hover {
     display: flex;
 }
 
-/* Fullscreen Countdown Overlay */
+/* Fullscreen Countdown Overlay with Glowing Orange Circle */
 .capture-countdown {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: clamp(8rem, 22vw, 18rem);
+    width: clamp(220px, 44vmin, 380px);
+    height: clamp(220px, 44vmin, 380px);
+    border-radius: 50%;
+    border: 9px solid #ff7b00;
+    box-shadow: 0 0 35px #ff7b00, 
+                0 0 75px rgba(255, 123, 0, 0.75), 
+                inset 0 0 35px rgba(255, 123, 0, 0.45);
+    background: rgba(8, 14, 26, 0.78);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    font-size: clamp(7rem, 22vmin, 13rem);
     font-weight: 900;
     font-family: system-ui, -apple-system, sans-serif;
-    color: #00d2ff;
-    text-shadow: 0 0 35px #00d2ff, 0 0 70px rgba(0, 210, 255, 0.95), 0 0 110px rgba(255, 107, 0, 0.75);
+    color: #ffffff;
+    text-shadow: 0 0 25px #ff7b00, 0 0 55px #ff7b00, 0 0 90px rgba(255, 123, 0, 0.9);
     z-index: 3500;
     pointer-events: none;
     display: none;
+    align-items: center;
+    justify-content: center;
     user-select: none;
     line-height: 1;
+    box-sizing: border-box;
 }
 
 .capture-countdown.active {
-    display: block;
+    display: flex;
 }
 
 .capture-countdown.anim-pop {
@@ -706,7 +719,7 @@ button:hover {
 }
 
 @keyframes countdown-pop {
-    0% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; filter: blur(6px); }
+    0% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; filter: blur(6px); }
     18% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; filter: blur(0px); }
     75% { transform: translate(-50%, -50%) scale(0.98); opacity: 1; }
     100% { transform: translate(-50%, -50%) scale(0.85); opacity: 0; }
@@ -1118,6 +1131,83 @@ button:hover {
     color: #cbd5e1;
     background: rgba(255, 255, 255, 0.1);
     border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* --- Delete Confirmation Modal (-) --- */
+.delete-card {
+    border-color: rgba(239, 68, 68, 0.7);
+    box-shadow: 0 0 45px rgba(239, 68, 68, 0.35), 0 10px 40px rgba(0, 0, 0, 0.95);
+    max-width: 520px;
+}
+
+.delete-title {
+    color: #ef4444;
+}
+
+.delete-info-box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 10px;
+    margin: 8px 0;
+    box-sizing: border-box;
+}
+
+.delete-item-title {
+    font-size: 1.25em;
+    font-weight: 800;
+    color: #ffffff;
+    word-break: break-word;
+}
+
+.delete-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-size: 0.85em;
+    color: #94a3b8;
+}
+
+.delete-item-meta strong {
+    color: #38bdf8;
+}
+
+.delete-warning-text {
+    margin: 0;
+    font-size: 0.88em;
+    line-height: 1.45;
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.12);
+    border-left: 3px solid #ef4444;
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+.confirm-delete-hint kbd {
+    background: #ef4444;
+    color: #ffffff;
+    box-shadow: 0 2px 0 #991b1b;
+    border-color: #f87171;
+}
+
+.confirm-delete-hint {
+    color: #fca5a5;
+    font-weight: 700;
+}
+
+.delete-status-spinner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    color: #38bdf8;
+    font-size: 0.9em;
+    font-weight: 600;
 }
 
 

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=5.9">
+    <link rel="stylesheet" href="static/style.css?v=6.0">
     <!-- Google MediaPipe for AI background removal -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -16,7 +16,7 @@
             <div class="dev-bar-actions">
                 <button id="photoboothToggleBtn" class="dev-photobooth-btn" title="Toggle Photobooth Mode (*)">📸 Photo: OFF</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v5.9</span>
+                <span class="version-badge">v6.0</span>
             </div>
         </div>
         <div class="controls-header">
@@ -32,6 +32,7 @@
                 <div class="hotkey-item"><kbd>.</kbd><span>Sound</span></div>
                 <div class="hotkey-item"><kbd>*</kbd><span>Photo</span></div>
                 <div class="hotkey-item"><kbd>+</kbd><span>Snap</span></div>
+                <div class="hotkey-item"><kbd>-</kbd><span>Delete</span></div>
                 <div class="hotkey-item"><kbd>)</kbd><span>Reload</span></div>
                 <div class="hotkey-item"><kbd>Enter</kbd><span>Trigger</span></div>
             </div>
@@ -147,8 +148,42 @@
         </div>
     </div>
 
+    <!-- Delete Media Confirmation Modal (-) -->
+    <div id="deleteModal" class="capture-modal delete-modal">
+        <div id="deleteCard" class="capture-result-card delete-card">
+            <div class="capture-header">
+                <div class="capture-header-top">
+                    <span class="capture-title delete-title">🗑️ DELETE MEDIA</span>
+                    <div id="deleteInactivityBadge" class="capture-inactivity-badge" title="Auto-cancels after inactivity">
+                        <span class="timer-icon">⏱️</span>
+                        <span id="deleteTimerText" class="timer-countdown">30s</span>
+                    </div>
+                </div>
+                <span class="capture-subtitle">Permanently delete this row from Google Sheets</span>
+            </div>
+            
+            <div class="delete-info-box">
+                <div class="delete-item-title" id="deleteItemTitle">Media Title</div>
+                <div class="delete-item-meta">
+                    <span>Card ID: <strong id="deleteItemId">12345</strong></span>
+                    <span>Source: <strong id="deleteItemSource">Users Tab</strong></span>
+                </div>
+                <p class="delete-warning-text">⚠️ Are you sure you want to delete this media? This will permanently remove its row from the spreadsheet.</p>
+                <div id="deleteStatusSpinner" class="delete-status-spinner" style="display: none;">
+                    <div class="capture-spinner"></div>
+                    <span class="delete-spinnerText">Deleting from Google Sheet...</span>
+                </div>
+            </div>
+
+            <div class="capture-footer-guide">
+                <span id="deleteConfirmHint" class="confirm-delete-hint"><kbd>Enter</kbd> Confirm Delete</span>
+                <span><kbd>(</kbd> or <kbd>Esc</kbd> Cancel</span>
+            </div>
+        </div>
+    </div>
+
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=5.9"></script>
+    <script src="static/script.js?v=6.0"></script>
 </body>
 </html>

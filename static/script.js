@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v5.9
+// static/script.js - Portal Door v6.0
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -35,6 +35,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const galleryCardsGrid = document.getElementById('galleryCardsGrid');
     const galleryInactivityBadge = document.getElementById('galleryInactivityBadge');
     const galleryTimerText = document.getElementById('galleryTimerText');
+
+    // Delete Confirmation Modal Elements
+    const deleteModal = document.getElementById('deleteModal');
+    const deleteCard = document.getElementById('deleteCard');
+    const deleteItemTitle = document.getElementById('deleteItemTitle');
+    const deleteItemId = document.getElementById('deleteItemId');
+    const deleteItemSource = document.getElementById('deleteItemSource');
+    const deleteStatusSpinner = document.getElementById('deleteStatusSpinner');
+    const deleteConfirmHint = document.getElementById('deleteConfirmHint');
+    const deleteInactivityBadge = document.getElementById('deleteInactivityBadge');
+    const deleteTimerText = document.getElementById('deleteTimerText');
 
     // Google Sheet CSV export base URL (spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0)
     const GOOGLE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/gviz/tq?tqx=out:csv";
@@ -86,6 +97,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let galleryInactivityInterval = null;
     let galleryRemainingSeconds = 90; // 90 seconds timeout for backdrop gallery picker
 
+    // Currently Active Media & Delete Confirmation State
+    let currentPlayingMedia = null;
+    let isDeleteConfirmOpen = false;
+    let isDeletingMedia = false;
+    let deleteInactivityInterval = null;
+    let deleteRemainingSeconds = 30; // 30 seconds timeout for delete confirmation
+
     // Google Drive Web App Script URL (default configured from user deployment, overridable in Developer Mode)
     const DEFAULT_DRIVE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw8sI54Tsza9NwwLd-Id3DgGBg69L4N0VxwSp9d3_dryLdSB5CvmPGtPpzt2uymKRjwcQ/exec";
     let driveScriptUrl = localStorage.getItem('portal_drive_script_url') || DEFAULT_DRIVE_SCRIPT_URL;
@@ -99,19 +117,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Audio tone generator for countdown beeps
-    function playBeep(frequency = 880, duration = 0.15) {
+    // Audio tone generator for countdown beeps (loud and clear)
+    function playBeep(frequency = 880, duration = 0.18, volume = 0.95, type = 'triangle') {
         if (isMuted) return;
         try {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             if (!AudioContext) return;
             const ctx = new AudioContext();
+            if (ctx.state === 'suspended') {
+                ctx.resume();
+            }
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = frequency;
-            gain.gain.setValueAtTime(0.3, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+            osc.type = type;
+            osc.frequency.setValueAtTime(frequency, ctx.currentTime);
+            gain.gain.setValueAtTime(volume, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
             osc.connect(gain);
             gain.connect(ctx.destination);
             osc.start();
@@ -663,8 +684,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function showHomeScreen() {
         isAtHomeScreen = true;
         isShowingRegistration = false;
+        currentPlayingMedia = null;
 
         closeCaptureModal();
+        closePhotoboothGalleryModal();
+        closeDeleteConfirmModal();
         updatePhotoboothVisibility();
 
         mediaDisplay.innerHTML = '';
@@ -672,24 +696,24 @@ document.addEventListener('DOMContentLoaded', () => {
         img.src = defaultClosedDoorUrl;
         img.alt = "Portal Door Closed";
         mediaDisplay.appendChild(img);
-        console.log("[v5.1] Home Screen active (doors closed). System ready.");
+        console.log("[v6.0] Home Screen active (doors closed). System ready.");
     }
 
     // --- Return to Home Screen (triggered by '(' key) ---
     async function returnToHomeScreen() {
         if (isTransitioning) return;
 
-        if (isCaptureModalOpen) {
-            closeCaptureModal();
-            return;
-        }
+        closeCaptureModal();
+        closePhotoboothGalleryModal();
+        closeDeleteConfirmModal();
+        currentPlayingMedia = null;
 
         if (controlsDiv.classList.contains('visible')) {
             controlsDiv.classList.remove('visible');
         }
 
         if (isAtHomeScreen) {
-            console.log("[v5.1] Already at Home Screen.");
+            console.log("[v6.0] Already at Home Screen.");
             return;
         }
 
@@ -865,8 +889,173 @@ document.addEventListener('DOMContentLoaded', () => {
         await playMediaData(item, item.id);
     }
 
+    // --- DELETE CURRENT MEDIA CONFIRMATION MODAL (-) ---
+
+    function updateDeleteInactivityUI() {
+        if (deleteTimerText) {
+            deleteTimerText.textContent = `${deleteRemainingSeconds}s`;
+        }
+        if (deleteInactivityBadge) {
+            if (deleteRemainingSeconds <= 10) {
+                deleteInactivityBadge.classList.add('urgent');
+            } else {
+                deleteInactivityBadge.classList.remove('urgent');
+            }
+        }
+    }
+
+    function clearDeleteInactivityTimer() {
+        if (deleteInactivityInterval) {
+            clearInterval(deleteInactivityInterval);
+            deleteInactivityInterval = null;
+        }
+        if (deleteInactivityBadge) {
+            deleteInactivityBadge.classList.remove('urgent');
+        }
+    }
+
+    function startDeleteInactivityTimer() {
+        clearDeleteInactivityTimer();
+        deleteRemainingSeconds = 30;
+        updateDeleteInactivityUI();
+
+        deleteInactivityInterval = setInterval(() => {
+            deleteRemainingSeconds--;
+            updateDeleteInactivityUI();
+
+            if (deleteRemainingSeconds <= 0) {
+                clearDeleteInactivityTimer();
+                if (isDeleteConfirmOpen) {
+                    console.log("[v6.0] 30s Delete confirmation inactivity timeout reached. Canceling.");
+                    closeDeleteConfirmModal();
+                }
+            }
+        }, 1000);
+    }
+
+    function resetDeleteInactivityTimer() {
+        if (isDeleteConfirmOpen && !isDeletingMedia) {
+            deleteRemainingSeconds = 30;
+            updateDeleteInactivityUI();
+        }
+    }
+
+    function openDeleteConfirmModal() {
+        if (isTransitioning || isCaptureModalOpen || isPhotoboothGalleryOpen || !currentPlayingMedia) return;
+
+        pauseActiveMedia();
+
+        isDeleteConfirmOpen = true;
+        isDeletingMedia = false;
+
+        if (deleteItemTitle) {
+            deleteItemTitle.textContent = currentPlayingMedia.title || currentPlayingMedia.id;
+        }
+        if (deleteItemId) {
+            deleteItemId.textContent = currentPlayingMedia.id;
+        }
+        if (deleteItemSource) {
+            deleteItemSource.textContent = currentPlayingMedia.source ? `${currentPlayingMedia.source} Tab` : 'Spreadsheet';
+        }
+        if (deleteStatusSpinner) {
+            deleteStatusSpinner.style.display = 'none';
+        }
+        if (deleteConfirmHint) {
+            deleteConfirmHint.style.display = 'inline-flex';
+        }
+
+        if (deleteModal) {
+            deleteModal.classList.add('active');
+        }
+
+        startDeleteInactivityTimer();
+        console.log(`[v6.0] Delete confirmation prompt opened for item ID "${currentPlayingMedia.id}".`);
+    }
+
+    function closeDeleteConfirmModal() {
+        isDeleteConfirmOpen = false;
+        isDeletingMedia = false;
+        clearDeleteInactivityTimer();
+
+        if (deleteModal) {
+            deleteModal.classList.remove('active');
+        }
+
+        if (!isAtHomeScreen && !isShowingRegistration) {
+            resumeActiveMedia();
+        }
+    }
+
+    async function confirmDeleteCurrentMedia() {
+        if (!currentPlayingMedia || isDeletingMedia) return;
+        isDeletingMedia = true;
+
+        clearDeleteInactivityTimer();
+
+        const mediaToDelete = { ...currentPlayingMedia };
+        console.log(`[v6.0] Deleting media ID "${mediaToDelete.id}" (${mediaToDelete.title}) from spreadsheet...`);
+
+        if (deleteStatusSpinner) {
+            deleteStatusSpinner.style.display = 'flex';
+        }
+        if (deleteConfirmHint) {
+            deleteConfirmHint.style.display = 'none';
+        }
+
+        // 1. Remove from local in-memory caches immediately
+        if (developerDatabase[mediaToDelete.id]) {
+            delete developerDatabase[mediaToDelete.id];
+        }
+        if (userDatabase[mediaToDelete.id]) {
+            delete userDatabase[mediaToDelete.id];
+        }
+        if (photoboothDatabase[mediaToDelete.id]) {
+            delete photoboothDatabase[mediaToDelete.id];
+            photoboothBackdrops = Object.values(photoboothDatabase);
+        }
+        renderDatasetPreview();
+
+        // 2. Send delete command to Google Apps Script Web App
+        let deletedOnSheet = false;
+        if (driveScriptUrl) {
+            try {
+                const response = await fetch(driveScriptUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'delete',
+                        id: mediaToDelete.id,
+                        source: mediaToDelete.source || '',
+                        timestamp: new Date().toISOString()
+                    })
+                });
+                const result = await response.json();
+                console.log("[v6.0] Google Apps Script delete response:", result);
+                if (result && (result.status === 'success' || result.status === 'not_found')) {
+                    deletedOnSheet = result.status === 'success';
+                }
+            } catch (err) {
+                console.warn("[v6.0] Error sending delete request to Google Apps Script:", err);
+            }
+        } else {
+            console.warn("[v6.0] No driveScriptUrl configured. Deleted from local cache only.");
+        }
+
+        isDeletingMedia = false;
+        closeDeleteConfirmModal();
+
+        const toastMsg = deletedOnSheet
+            ? `🗑️ Deleted "${mediaToDelete.title || mediaToDelete.id}" from Sheet!`
+            : `🗑️ Removed "${mediaToDelete.title || mediaToDelete.id}"!`;
+        showToast(toastMsg);
+
+        // Return to Home Screen (doors close)
+        await returnToHomeScreen();
+    }
+
     // --- Shared Core Media Rendering & Display Helper ---
     async function renderAndDisplayMedia(data, cleanId) {
+        currentPlayingMedia = { ...data, id: cleanId };
         isShowingRegistration = false;
         const rawPath = data.file_path || '';
         const ytId = getYouTubeVideoId(rawPath);
@@ -1430,7 +1619,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resumeActiveMedia();
     }
 
-    // Start 3-2-1 Countdown and Snapshot
+    // Start 5-4-3-2-1 Countdown and Snapshot
     async function startPhotoCountdown() {
         if (isCountingDown || isCaptureModalOpen) return;
 
@@ -1455,22 +1644,22 @@ document.addEventListener('DOMContentLoaded', () => {
             captureCountdown.classList.add('anim-pop');
         }
 
-        let count = 3;
+        let count = 5;
         triggerCountdownPop(count);
-        playBeep(880, 0.15);
+        playBeep(880, 0.18, 0.95, 'triangle');
 
         const timer = setInterval(async () => {
             count--;
             if (count > 0) {
                 triggerCountdownPop(count);
-                playBeep(880, 0.15);
+                playBeep(880, 0.18, 0.95, 'triangle');
             } else {
                 clearInterval(timer);
                 if (captureCountdown) {
                     captureCountdown.classList.remove('active');
                     captureCountdown.classList.remove('anim-pop');
                 }
-                playBeep(1320, 0.35); // higher confirmation pitch
+                playBeep(1320, 0.4, 1.0, 'triangle'); // loud confirmation tone
 
                 // Camera flash
                 captureFlash.classList.add('active');
@@ -1693,6 +1882,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Global Keypad & Keyboard Listener (Pure Keypad / NFC Navigation) ---
     document.addEventListener('keydown', (event) => {
+        // --- 0. DELETE CONFIRMATION MODAL NAVIGATION ---
+        if (isDeleteConfirmOpen) {
+            resetDeleteInactivityTimer();
+
+            // Enter confirms deletion
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                confirmDeleteCurrentMedia();
+                return;
+            }
+
+            // ( or Esc cancels deletion and resumes media
+            if (event.key === '(' || event.key === 'Escape') {
+                event.preventDefault();
+                closeDeleteConfirmModal();
+                return;
+            }
+
+            return; // Ignore other keys while delete modal is open
+        }
+
         // --- 1. CAPTURE MODAL ACTIVE NAVIGATION ---
         if (isCaptureModalOpen) {
             resetCaptureInactivityTimer();
@@ -1781,6 +1991,15 @@ document.addEventListener('DOMContentLoaded', () => {
             event.preventDefault();
             startPhotoCountdown();
             return;
+        }
+
+        // Hotkey: - (minus / subtract) prompts to Delete current media from spreadsheet
+        if (event.key === '-' || event.code === 'NumpadSubtract' || event.code === 'Minus') {
+            if (currentPlayingMedia && !isAtHomeScreen && !isShowingRegistration && !isCaptureModalOpen && !isPhotoboothGalleryOpen && !isDeleteConfirmOpen) {
+                event.preventDefault();
+                openDeleteConfirmModal();
+                return;
+            }
         }
 
         // Hotkey: * (asterisk / multiply) toggles Photobooth Mode ON/OFF
@@ -1876,9 +2095,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (photoboothGalleryModal) {
         photoboothGalleryModal.addEventListener('pointerdown', resetGalleryInactivityTimer);
     }
+    if (deleteModal) {
+        deleteModal.addEventListener('pointerdown', resetDeleteInactivityTimer);
+    }
 
     // Initial startup
-    console.log("Portal Door v5.9 initialized.");
+    console.log("Portal Door v6.0 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
