@@ -1,18 +1,32 @@
 /**
- * PORTAL-DOOR - Google Apps Script Backend (v6.0)
+ * PORTAL-DOOR - Google Apps Script Backend (v6.2)
  * 
  * Capabilities:
  * 1. Uploads Photobooth photos to Google Drive "Portal Photos" folder and returns direct image links.
  * 2. Deletes media rows from Google Sheet ("Developer", "Users", or "Photobooth" tabs) when "-" is pressed on kiosk.
  * 
- * Setup Instructions:
+ * IMPORTANT - ONE-TIME AUTHORIZATION STEP:
+ * Because this script now accesses Google Sheets in addition to Google Drive:
  * 1. Open your Google Sheet: https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/edit
- * 2. In top menu, click Extensions > Apps Script.
- * 3. Replace all code in Code.gs with this file's contents.
- * 4. Click Save (disk icon).
- * 5. Click Deploy > Manage deployments > Click edit (pencil icon) > Version: New version > Deploy.
- *    (Or Deploy > New deployment > Web app > Execute as: Me > Who has access: Anyone > Deploy).
+ * 2. Go to Extensions > Apps Script.
+ * 3. Replace all code in Code.gs with this file.
+ * 4. In the top toolbar dropdown (next to "Debug"), select "testAuthorization".
+ * 5. Click "Run" ▶️.
+ * 6. Google will show "Authorization Required". Click "Review Permissions" > choose your account > "Advanced" > "Go to Untitled project (unsafe)" > "Allow".
+ * 7. Click Deploy > Manage deployments > click pencil icon > Version: "New version" > Deploy!
  */
+
+// One-time authorization trigger function - select this in Apps Script and click Run
+function testAuthorization() {
+  var ss;
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById('1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0');
+  } catch (_) {
+    ss = SpreadsheetApp.openById('1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0');
+  }
+  DriveApp.getRootFolder();
+  Logger.log("Authorization Successful! Connected to Sheet: " + ss.getName());
+}
 
 function doPost(e) {
   try {
@@ -30,8 +44,10 @@ function doPost(e) {
         })).setMimeType(ContentService.MimeType.JSON);
       }
 
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      if (!ss) {
+      var ss;
+      try {
+        ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById('1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0');
+      } catch (e1) {
         ss = SpreadsheetApp.openById('1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0');
       }
 

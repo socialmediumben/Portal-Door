@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v6.1
+// static/script.js - Portal Door v6.2
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -699,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("[v6.0] Home Screen active (doors closed). System ready.");
     }
 
-    // --- Return to Home Screen (triggered by '(' key) ---
+    // --- Return to Home Screen (triggered by '/' key) ---
     async function returnToHomeScreen() {
         if (isTransitioning) return;
 
@@ -764,7 +764,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="reg-step"><span class="reg-step-num">3.</span><span>Submit form, then tap your card again!</span></div>
                 </div>
                 <a class="reg-direct-link" href="${prefilledFormUrl}" target="_blank" rel="noopener">Open Form in Browser</a>
-                <div class="reg-hint">Press ( on keypad to return home</div>
+                <div class="reg-hint">Press / on keypad to return home</div>
             </div>
         `;
     }
@@ -1030,24 +1030,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     })
                 });
                 const result = await response.json();
-                console.log("[v6.0] Google Apps Script delete response:", result);
-                if (result && (result.status === 'success' || result.status === 'not_found')) {
-                    deletedOnSheet = result.status === 'success';
+                console.log("[v6.2] Google Apps Script delete response:", result);
+                if (result && result.status === 'success') {
+                    deletedOnSheet = true;
+                } else if (result && result.status === 'error') {
+                    console.error("[v6.2] Google Apps Script error:", result.message);
+                    if (String(result.message).includes("permission") || String(result.message).includes("SpreadsheetApp")) {
+                        showToast("⚠️ Needs Permission! Open Apps Script & click Run on testAuthorization");
+                    } else {
+                        showToast(`⚠️ Delete failed: ${result.message}`);
+                    }
                 }
             } catch (err) {
-                console.warn("[v6.0] Error sending delete request to Google Apps Script:", err);
+                console.warn("[v6.2] Error sending delete request to Google Apps Script:", err);
+                showToast("⚠️ Could not reach Apps Script endpoint.");
             }
         } else {
-            console.warn("[v6.0] No driveScriptUrl configured. Deleted from local cache only.");
+            console.warn("[v6.2] No driveScriptUrl configured. Deleted from local cache only.");
         }
 
         isDeletingMedia = false;
         closeDeleteConfirmModal();
 
-        const toastMsg = deletedOnSheet
-            ? `🗑️ Deleted "${mediaToDelete.title || mediaToDelete.id}" from Sheet!`
-            : `🗑️ Removed "${mediaToDelete.title || mediaToDelete.id}"!`;
-        showToast(toastMsg);
+        if (deletedOnSheet) {
+            showToast(`🗑️ Deleted "${mediaToDelete.title || mediaToDelete.id}" from Sheet!`);
+        }
 
         // Return to Home Screen (doors close)
         await returnToHomeScreen();
@@ -1893,15 +1900,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // ( or Esc cancels deletion and resumes media
-            if (event.key === '(' || event.key === 'Escape') {
+            // / or Esc cancels deletion and resumes media
+            if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Escape') {
                 event.preventDefault();
                 closeDeleteConfirmModal();
                 return;
             }
 
-            // / or FN+Esc toggles Fullscreen
-            if (event.key === '/' || event.code === 'NumpadDivide' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
+            // ( or FN+Esc toggles Fullscreen
+            if (event.key === '(' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
                 event.preventDefault();
                 toggleFullscreen();
                 return;
@@ -1914,15 +1921,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isCaptureModalOpen) {
             resetCaptureInactivityTimer();
 
-            // ( or Esc closes the modal and resumes media (Home / Cancel key)
-            if (event.key === '(' || event.key === 'Escape') {
+            // / or Esc closes the modal and resumes media (Home / Cancel key)
+            if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Escape') {
                 event.preventDefault();
                 closeCaptureModal();
                 return;
             }
 
-            // / or FN+Esc toggles Fullscreen
-            if (event.key === '/' || event.code === 'NumpadDivide' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
+            // ( or FN+Esc toggles Fullscreen
+            if (event.key === '(' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
                 event.preventDefault();
                 toggleFullscreen();
                 return;
@@ -1962,15 +1969,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isPhotoboothGalleryOpen) {
             resetGalleryInactivityTimer();
 
-            // ( or Enter or Esc closes the gallery modal (Home / Cancel key)
-            if (event.key === '(' || event.key === 'Enter' || event.key === 'Escape') {
+            // / or Enter or Esc closes the gallery modal (Home / Cancel key)
+            if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Enter' || event.key === 'Escape') {
                 event.preventDefault();
                 closePhotoboothGalleryModal();
                 return;
             }
 
-            // / or FN+Esc toggles Fullscreen
-            if (event.key === '/' || event.code === 'NumpadDivide' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
+            // ( or FN+Esc toggles Fullscreen
+            if (event.key === '(' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
                 event.preventDefault();
                 toggleFullscreen();
                 return;
@@ -2036,8 +2043,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hotkey: ( returns to Home Screen (closed doors) & clears input
-        if (event.key === '(') {
+        // Hotkey: / returns to Home Screen (closed doors) & clears input
+        if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash') {
             event.preventDefault();
             contentIdInput.value = '';
             contentIdInput.blur();
@@ -2045,8 +2052,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hotkey: / or FN+Esc (LaunchCalculator) toggles Fullscreen on and off
-        if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
+        // Hotkey: ( or FN+Esc (LaunchCalculator) toggles Fullscreen on and off
+        if (event.key === '(' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
             event.preventDefault();
             toggleFullscreen();
             return;

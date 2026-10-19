@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=6.1">
+    <link rel="stylesheet" href="static/style.css?v=6.2">
     <!-- Google MediaPipe for AI background removal -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -16,7 +16,7 @@
             <div class="dev-bar-actions">
                 <button id="photoboothToggleBtn" class="dev-photobooth-btn" title="Toggle Photobooth Mode (*)">📸 Photo: OFF</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v6.1</span>
+                <span class="version-badge">v6.2</span>
             </div>
         </div>
         <div class="controls-header">
@@ -27,8 +27,8 @@
             <div class="hotkeys-row">
                 <span class="hotkeys-tag tag-portal">PORTAL</span>
                 <div class="hotkey-item"><kbd>Tab</kbd><span>Dev Mode</span></div>
-                <div class="hotkey-item"><kbd>(</kbd><span>Home</span></div>
-                <div class="hotkey-item"><kbd>/</kbd><span>Fullscreen</span></div>
+                <div class="hotkey-item"><kbd>/</kbd><span>Home</span></div>
+                <div class="hotkey-item"><kbd>(</kbd><span>Fullscreen</span></div>
                 <div class="hotkey-item"><kbd>.</kbd><span>Sound</span></div>
                 <div class="hotkey-item"><kbd>*</kbd><span>Photo</span></div>
                 <div class="hotkey-item"><kbd>+</kbd><span>Snap</span></div>
@@ -117,7 +117,7 @@
             <div class="capture-footer-guide">
                 <span><kbd>0-9</kbd> Change Backdrop</span>
                 <span id="captureConfirmHint"><kbd>Enter</kbd> Save to Drive</span>
-                <span><kbd>(</kbd> Close</span>
+                <span><kbd>/</kbd> Close</span>
             </div>
         </div>
     </div>
@@ -143,7 +143,7 @@
 
             <div class="capture-footer-guide">
                 <span><kbd>1-9</kbd> Select Backdrop</span>
-                <span id="galleryCancelHint"><kbd>(</kbd> Cancel</span>
+                <span id="galleryCancelHint"><kbd>/</kbd> Cancel</span>
             </div>
         </div>
     </div>
@@ -177,13 +177,13 @@
 
             <div class="capture-footer-guide">
                 <span id="deleteConfirmHint" class="confirm-delete-hint"><kbd>Enter</kbd> Confirm Delete</span>
-                <span><kbd>(</kbd> or <kbd>Esc</kbd> Cancel</span>
+                <span><kbd>/</kbd> or <kbd>Esc</kbd> Cancel</span>
             </div>
         </div>
     </div>
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=6.1"></script>
+    <script src="static/script.js?v=6.2"></script>
 </body>
 </html>
