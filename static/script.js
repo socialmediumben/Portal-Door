@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v5.8
+// static/script.js - Portal Door v5.9
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -675,7 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("[v5.1] Home Screen active (doors closed). System ready.");
     }
 
-    // --- Return to Home Screen (triggered by Escape key) ---
+    // --- Return to Home Screen (triggered by '(' key) ---
     async function returnToHomeScreen() {
         if (isTransitioning) return;
 
@@ -740,7 +740,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="reg-step"><span class="reg-step-num">3.</span><span>Submit form, then tap your card again!</span></div>
                 </div>
                 <a class="reg-direct-link" href="${prefilledFormUrl}" target="_blank" rel="noopener">Open Form in Browser</a>
-                <div class="reg-hint">Press Esc on keypad to return home</div>
+                <div class="reg-hint">Press ( on keypad to return home</div>
             </div>
         `;
     }
@@ -1697,10 +1697,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isCaptureModalOpen) {
             resetCaptureInactivityTimer();
 
-            // Esc closes the modal and resumes media
-            if (event.key === 'Escape') {
+            // ( closes the modal and resumes media (Home key)
+            if (event.key === '(') {
                 event.preventDefault();
                 closeCaptureModal();
+                return;
+            }
+
+            // Esc toggles Fullscreen
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                toggleFullscreen();
                 return;
             }
 
@@ -1738,10 +1745,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isPhotoboothGalleryOpen) {
             resetGalleryInactivityTimer();
 
-            // Esc or Enter closes the gallery modal
-            if (event.key === 'Escape' || event.key === 'Enter') {
+            // ( or Enter closes the gallery modal (Home / Cancel key)
+            if (event.key === '(' || event.key === 'Enter') {
                 event.preventDefault();
                 closePhotoboothGalleryModal();
+                return;
+            }
+
+            // Esc toggles Fullscreen
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                toggleFullscreen();
                 return;
             }
 
@@ -1796,8 +1810,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hotkey: Escape returns to Home Screen (closed doors) & clears input
-        if (event.key === 'Escape') {
+        // Hotkey: ( returns to Home Screen (closed doors) & clears input
+        if (event.key === '(') {
             event.preventDefault();
             contentIdInput.value = '';
             contentIdInput.blur();
@@ -1805,8 +1819,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hotkey: ( toggles Fullscreen
-        if (event.key === '(') {
+        // Hotkey: Escape toggles Fullscreen on and off
+        if (event.key === 'Escape') {
             event.preventDefault();
             toggleFullscreen();
             return;
@@ -1864,7 +1878,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial startup
-    console.log("Portal Door v5.8 initialized.");
+    console.log("Portal Door v5.9 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
