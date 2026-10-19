@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v6.0
+// static/script.js - Portal Door v6.1
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -1900,6 +1900,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // / or FN+Esc toggles Fullscreen
+            if (event.key === '/' || event.code === 'NumpadDivide' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
+                event.preventDefault();
+                toggleFullscreen();
+                return;
+            }
+
             return; // Ignore other keys while delete modal is open
         }
 
@@ -1907,15 +1914,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isCaptureModalOpen) {
             resetCaptureInactivityTimer();
 
-            // ( closes the modal and resumes media (Home key)
-            if (event.key === '(') {
+            // ( or Esc closes the modal and resumes media (Home / Cancel key)
+            if (event.key === '(' || event.key === 'Escape') {
                 event.preventDefault();
                 closeCaptureModal();
                 return;
             }
 
-            // Esc toggles Fullscreen
-            if (event.key === 'Escape') {
+            // / or FN+Esc toggles Fullscreen
+            if (event.key === '/' || event.code === 'NumpadDivide' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
                 event.preventDefault();
                 toggleFullscreen();
                 return;
@@ -1955,15 +1962,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isPhotoboothGalleryOpen) {
             resetGalleryInactivityTimer();
 
-            // ( or Enter closes the gallery modal (Home / Cancel key)
-            if (event.key === '(' || event.key === 'Enter') {
+            // ( or Enter or Esc closes the gallery modal (Home / Cancel key)
+            if (event.key === '(' || event.key === 'Enter' || event.key === 'Escape') {
                 event.preventDefault();
                 closePhotoboothGalleryModal();
                 return;
             }
 
-            // Esc toggles Fullscreen
-            if (event.key === 'Escape') {
+            // / or FN+Esc toggles Fullscreen
+            if (event.key === '/' || event.code === 'NumpadDivide' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
                 event.preventDefault();
                 toggleFullscreen();
                 return;
@@ -2038,10 +2045,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hotkey: Escape toggles Fullscreen on and off
-        if (event.key === 'Escape') {
+        // Hotkey: / or FN+Esc (LaunchCalculator) toggles Fullscreen on and off
+        if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
             event.preventDefault();
             toggleFullscreen();
+            return;
+        }
+
+        // Hotkey: Escape closes Dev Mode if open
+        if (event.key === 'Escape') {
+            if (controlsDiv.classList.contains('visible')) {
+                event.preventDefault();
+                controlsDiv.classList.remove('visible');
+            }
             return;
         }
 
@@ -2100,7 +2116,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial startup
-    console.log("Portal Door v6.0 initialized.");
+    console.log("Portal Door v6.1 initialized.");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
