@@ -222,7 +222,7 @@ kbd {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    max-width: 480px;
+    max-width: 620px;
 }
 
 .dev-dataset-header {
@@ -723,7 +723,7 @@ button:hover {
 
 .cert-list-box {
     width: 100%;
-    max-height: 240px;
+    max-height: 400px;
     overflow-y: auto;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1418,4 +1418,94 @@ button:hover {
     margin-left: 6px;
     vertical-align: middle;
     box-shadow: 0 0 6px rgba(255, 255, 255, 0.25);
+}
+
+
+/* --- Video Game Style Badge Grid (v6.6) --- */
+.cert-game-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px;
+    padding: 10px 4px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.cert-game-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 116px;
+    text-align: center;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.cert-game-badge:hover {
+    transform: translateY(-4px) scale(1.05);
+}
+
+.cert-badge-frame {
+    position: relative;
+    width: 88px;
+    height: 88px;
+    border-radius: 22px;
+    background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.15) 0%, rgba(15, 23, 42, 0.9) 100%);
+    border: 3px solid var(--badge-color, #3bc0cd);
+    box-shadow: 0 0 20px var(--badge-color, rgba(59, 192, 205, 0.4)), inset 0 0 14px rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+}
+
+.cert-badge-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    filter: drop-shadow(0 0 8px var(--badge-color, #3bc0cd));
+}
+
+.cert-badge-plus {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--badge-color, #f16622);
+    color: #ffffff;
+    font-size: 19px;
+    font-weight: 900;
+    line-height: 25px;
+    text-align: center;
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 12px var(--badge-color, rgba(241, 102, 34, 0.8));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cert-badge-caption {
+    width: 100%;
+}
+
+.cert-badge-title {
+    font-size: 0.85em;
+    font-weight: 800;
+    color: #f8fafc;
+    line-height: 1.25;
+    margin-bottom: 2px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+    word-break: break-word;
+}
+
+.cert-badge-level {
+    font-size: 0.7em;
+    font-weight: 700;
+    color: var(--badge-color, #94a3b8);
+    text-transform: uppercase;
+    letter-spacing: 0.75px;
 }
