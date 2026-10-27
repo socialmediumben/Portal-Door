@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isTransitioning = false;
     let isAtHomeScreen = true;
     let isShowingRegistration = false;
+    let isShowingCertifications = false;
     let isMuted = false; // Default sound ON as requested
     let soundToastTimeout = null;
 
@@ -158,7 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Update Photobooth Canvas Visibility ---
     function updatePhotoboothVisibility() {
         if (!photoboothCanvas) return;
-        const shouldBeVisible = isPhotoboothActive && !isAtHomeScreen && !isShowingRegistration && !isCaptureModalOpen;
+        const shouldBeVisible = isPhotoboothActive && !isAtHomeScreen && !isShowingRegistration && !isShowingCertifications && !isCaptureModalOpen;
         if (shouldBeVisible) {
             photoboothCanvas.classList.add('visible');
         } else {
@@ -688,6 +689,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function showHomeScreen() {
         isAtHomeScreen = true;
         isShowingRegistration = false;
+        isShowingCertifications = false;
         currentPlayingMedia = null;
 
         closeCaptureModal();
@@ -746,13 +748,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Helper: Fetch Portal Media from Neon One (CRM Single Source of Truth) ---
-    async function fetchNeonOnePortalMedia(tapCard) {
+    // --- Helper: Fetch Full Member Record from Neon One (CRM Single Source of Truth) ---
+    async function fetchNeonOneMember(tapCard) {
         try {
             const cleanCard = String(tapCard).trim();
             if (!cleanCard) return null;
 
-            console.log(`[Neon One] Querying account for Tap Card "${cleanCard}"...`);
+            console.log(`[Neon One] Looking up full constituent record for Tap Card "${cleanCard}"...`);
             const searchRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/search`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -779,13 +781,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const portalField = customFields.find(f => String(f.id) === "117" || (f.name || '').toLowerCase() === "portal media");
             const mediaUrl = (portalField?.value || '').trim();
 
-            if (!mediaUrl) {
-                console.log(`[Neon One] Account ID ${accountId} found for Tap Card "${cleanCard}", but Portal Media field is blank.`);
-                return null;
-            }
-
             const contact = ind.primaryContact || {};
-            const displayName = contact.preferredName || contact.firstName || 'Member';
+            const displayName = contact.preferredName || contact.firstName || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || 'Member';
+
+            // Extract Certifications (Field 116)
+            let certsList = [];
+            const certField = customFields.find(f => String(f.id) === "116" || (f.name || '').toLowerCase() === "certifications");
+            if (certField) {
+                if (Array.isArray(certField.optionValues)) {
+                    certsList = certField.optionValues.map(opt => opt.name || String(opt));
+                } else if (certField.value) {
+                    certsList = [String(certField.value)];
+                }
+            }
 
             let mediaType = 'video';
             if (getYouTubeVideoId(mediaUrl)) {
@@ -794,14 +802,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 mediaType = 'image';
             }
 
-            console.log(`[Neon One] Found active Portal Media for ${displayName} (Tap Card "${cleanCard}"): ${mediaUrl}`);
-
             return {
                 id: cleanCard,
                 title: `${displayName}'s Portal`,
                 type: mediaType,
                 file_path: mediaUrl,
-                source: 'Neon One'
+                source: 'Neon One',
+                displayName: displayName,
+                certifications: certsList,
+                membershipStatus: ind.accountCurrentMembershipStatus ? `${ind.accountCurrentMembershipStatus} Member` : 'Active Member'
             };
         } catch (err) {
             console.warn('[Portal-Door] Neon One lookup error:', err);
@@ -809,9 +818,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Helper: Fetch Portal Media from Neon One (CRM Single Source of Truth) ---
+    async function fetchNeonOnePortalMedia(tapCard) {
+        const member = await fetchNeonOneMember(tapCard);
+        if (member && member.file_path) {
+            console.log(`[Neon One] Found active Portal Media for ${member.displayName} (Tap Card "${tapCard}"): ${member.file_path}`);
+            return member;
+        }
+        return null;
+    }
+
     // --- Render Registration Screen (QR code to Companion App with pre-filled ID) ---
     function renderRegistrationScreen(unregisteredId) {
         isShowingRegistration = true;
+        isShowingCertifications = false;
         updatePhotoboothVisibility();
 
         const companionUrl = `${COMPANION_APP_PORTAL_URL}?card=${encodeURIComponent(unregisteredId)}`;
@@ -819,7 +839,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         mediaDisplay.innerHTML = `
             <div class="registration-container">
-                <span class="reg-badge">NEW OR UNASSIGNED KEY DETECTED</span>
+                <span class="reg-badge">PORTAL MEDIA SETUP</span>
                 <h2 class="reg-title">Set Up Your Portal Media</h2>
                 <div class="reg-id-box">Tap Card: <span class="reg-id-val">${unregisteredId}</span></div>
                 <div class="reg-qr-wrapper">
@@ -831,7 +851,49 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="reg-step"><span class="reg-step-num">3.</span><span>Tap Save in the app, then tap your card again!</span></div>
                 </div>
                 <a class="reg-direct-link" href="${companionUrl}" target="_blank" rel="noopener">Open Companion App</a>
-                <div class="reg-hint">Press / on keypad to return home</div>
+                <div class="reg-hint">Press Backspace on keypad to return home</div>
+            </div>
+        `;
+    }
+
+    // --- Render Member Achievements & Certifications Screen (triggered by '/' key) ---
+    function renderCertificationsScreen(memberData) {
+        isShowingCertifications = true;
+        isShowingRegistration = false;
+        updatePhotoboothVisibility();
+
+        const certs = memberData.certifications || [];
+        const displayName = memberData.displayName || memberData.title?.replace("'s Portal", '') || 'Member';
+        const cardId = memberData.id || 'Unknown';
+        const status = memberData.membershipStatus || 'Active Member';
+
+        const certsListHtml = certs.length > 0
+            ? certs.map(c => `
+                <div class="cert-item">
+                    <span class="cert-check">✓</span>
+                    <span class="cert-name">${c}</span>
+                    <span class="cert-tag">Authorized</span>
+                </div>
+              `).join('')
+            : `<div class="cert-empty">No tool certifications recorded yet in Neon One.<br>Attend an equipment safety walkthrough to get certified!</div>`;
+
+        mediaDisplay.innerHTML = `
+            <div class="certifications-container">
+                <span class="cert-badge">MEMBER PASSPORT • NEON ONE SYNCED</span>
+                <h2 class="cert-title">${displayName}</h2>
+                <div class="cert-meta-row">
+                    <span class="cert-tier">${status}</span>
+                    <span class="cert-card-id">Card #${cardId}</span>
+                </div>
+                <div class="cert-section-label">Authorized Tool Certifications (${certs.length})</div>
+                <div class="cert-list-box">
+                    ${certsListHtml}
+                </div>
+                <div class="cert-footer-guide">
+                    <span>Press <kbd>/</kbd> to resume Media</span>
+                    <span>•</span>
+                    <span>Press <kbd>Backspace</kbd> for Home</span>
+                </div>
             </div>
         `;
     }
@@ -1131,6 +1193,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderAndDisplayMedia(data, cleanId) {
         currentPlayingMedia = { ...data, id: cleanId };
         isShowingRegistration = false;
+        isShowingCertifications = false;
         const rawPath = data.file_path || '';
         const ytId = getYouTubeVideoId(rawPath);
         const resolvedPath = normalizeMediaUrl(rawPath, data.type);
@@ -1974,8 +2037,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // / or Esc cancels deletion and resumes media
-            if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Escape') {
+            // Backspace, /, or Esc cancels deletion and resumes media
+            if (event.key === 'Backspace' || event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Escape') {
                 event.preventDefault();
                 closeDeleteConfirmModal();
                 return;
@@ -1995,8 +2058,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isCaptureModalOpen) {
             resetCaptureInactivityTimer();
 
-            // / or Esc closes the modal and resumes media (Home / Cancel key)
-            if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Escape') {
+            // Backspace or Esc closes the modal and resumes media (Home / Cancel key)
+            if (event.key === 'Backspace' || event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Escape') {
                 event.preventDefault();
                 closeCaptureModal();
                 return;
@@ -2043,8 +2106,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isPhotoboothGalleryOpen) {
             resetGalleryInactivityTimer();
 
-            // / or Enter or Esc closes the gallery modal (Home / Cancel key)
-            if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Enter' || event.key === 'Escape') {
+            // Backspace, Enter, or Esc closes the gallery modal (Home / Cancel key)
+            if (event.key === 'Backspace' || event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Enter' || event.key === 'Escape') {
                 event.preventDefault();
                 closePhotoboothGalleryModal();
                 return;
@@ -2081,13 +2144,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hotkey: - (minus / subtract) prompts to Delete current media from spreadsheet
+        // Hotkey: - (minus / subtract) brings up the QR code to change/set Portal Media on the companion app
         if (event.key === '-' || event.code === 'NumpadSubtract' || event.code === 'Minus') {
-            if (currentPlayingMedia && !isAtHomeScreen && !isShowingRegistration && !isCaptureModalOpen && !isPhotoboothGalleryOpen && !isDeleteConfirmOpen) {
-                event.preventDefault();
-                openDeleteConfirmModal();
-                return;
+            event.preventDefault();
+            const targetCardId = currentPlayingMedia?.id || contentIdInput.value.trim();
+            if (targetCardId) {
+                console.log(`[Hotkey -] Opening QR code to change media for card: ${targetCardId}`);
+                renderRegistrationScreen(targetCardId);
+                isAtHomeScreen = false;
+            } else {
+                mediaTitle.textContent = "Scan a Tap Card first to edit its media";
+                mediaTitle.classList.add('visible');
+                setTimeout(() => mediaTitle.classList.remove('visible'), 2500);
             }
+            return;
         }
 
         // Hotkey: * (asterisk / multiply) toggles Photobooth Mode ON/OFF
@@ -2117,57 +2187,66 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hotkey: / returns to Home Screen (closed doors) & clears input
+        // Hotkey: / toggles Member Achievements / Certifications Screen
         if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash') {
             event.preventDefault();
-            contentIdInput.value = '';
-            contentIdInput.blur();
-            returnToHomeScreen();
-            return;
-        }
 
-        // Hotkey: ( or FN+Esc (LaunchCalculator) toggles Fullscreen on and off
-        if (event.key === '(' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
-            event.preventDefault();
-            toggleFullscreen();
-            return;
-        }
-
-        // Hotkey: Escape closes Dev Mode if open
-        if (event.key === 'Escape') {
-            if (controlsDiv.classList.contains('visible')) {
-                event.preventDefault();
-                controlsDiv.classList.remove('visible');
+            // If already viewing certifications, toggle back to playing media (if available)
+            if (isShowingCertifications) {
+                isShowingCertifications = false;
+                if (currentPlayingMedia && currentPlayingMedia.file_path) {
+                    renderAndDisplayMedia(currentPlayingMedia, currentPlayingMedia.id);
+                } else {
+                    returnToHomeScreen();
+                }
+                return;
             }
-            return;
-        }
 
-        // Hotkey: ) reloads Google Sheet / local database
-        if (event.key === ')') {
-            event.preventDefault();
-            reloadData();
-            return;
-        }
+            const targetCardId = currentPlayingMedia?.id || contentIdInput.value.trim();
 
-        // Enter triggers playback for whatever ID is in the input, or opens Photobooth Gallery if empty!
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            const idToTrigger = contentIdInput.value.trim();
-            if (idToTrigger) {
-                fetchMedia(idToTrigger);
+            if (targetCardId) {
+                if (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications) {
+                    renderCertificationsScreen(currentPlayingMedia);
+                } else {
+                    mediaDisplay.innerHTML = `
+                        <div class="certifications-container">
+                            <span class="cert-badge">NEON ONE LOOKUP</span>
+                            <h2 class="cert-title">Loading Certifications...</h2>
+                            <div class="reg-id-box">Card #${targetCardId}</div>
+                            <div class="capture-spinner" style="margin: 20px auto;"></div>
+                        </div>
+                    `;
+                    fetchNeonOneMember(targetCardId).then(member => {
+                        if (member) {
+                            renderCertificationsScreen(member);
+                        } else {
+                            renderCertificationsScreen({
+                                id: targetCardId,
+                                displayName: 'Member',
+                                certifications: [],
+                                membershipStatus: 'Unregistered Key'
+                            });
+                        }
+                    });
+                }
             } else {
-                openPhotoboothPickerModal();
+                mediaTitle.textContent = "Scan a Tap Card to view certifications";
+                mediaTitle.classList.add('visible');
+                setTimeout(() => mediaTitle.classList.remove('visible'), 2500);
             }
             return;
         }
 
-        // Backspace removes last digit
+        // Hotkey: Backspace is the Home button (returns to Home Screen with closed doors & clears input)
         if (event.key === 'Backspace') {
-            if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
+            if (document.activeElement !== scriptUrlInput) {
                 event.preventDefault();
-                contentIdInput.value = contentIdInput.value.slice(0, -1);
+                contentIdInput.value = '';
+                contentIdInput.blur();
+                isShowingCertifications = false;
+                returnToHomeScreen();
+                return;
             }
-            return;
         }
 
         // Digits (0-9): Automatically route numbers directly into the search bar without needing mouse click
