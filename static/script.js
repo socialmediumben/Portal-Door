@@ -867,15 +867,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const cardId = memberData.id || 'Unknown';
         const status = memberData.membershipStatus || 'Active Member';
 
-        const certsListHtml = certs.length > 0
-            ? certs.map(c => `
+        let certsListHtml = '';
+        let deduplicatedCount = certs.length;
+        if (typeof SMCertifications !== 'undefined' && typeof SMCertifications.renderColorBadges === 'function') {
+            certsListHtml = SMCertifications.renderColorBadges(certs);
+            const grouped = SMCertifications.dedupeAndGroup(certs);
+            deduplicatedCount = grouped.length;
+        } else if (certs.length > 0) {
+            certsListHtml = certs.map(c => `
                 <div class="cert-item">
                     <span class="cert-check">✓</span>
                     <span class="cert-name">${c}</span>
                     <span class="cert-tag">Authorized</span>
                 </div>
-              `).join('')
-            : `<div class="cert-empty">No tool certifications recorded yet in Neon One.<br>Attend an equipment safety walkthrough to get certified!</div>`;
+            `).join('');
+        } else {
+            certsListHtml = `<div class="cert-empty">No tool certifications recorded yet in Neon One.<br>Attend an equipment safety walkthrough to get certified!</div>`;
+        }
 
         mediaDisplay.innerHTML = `
             <div class="certifications-container">
@@ -885,7 +893,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="cert-tier">${status}</span>
                     <span class="cert-card-id">Card #${cardId}</span>
                 </div>
-                <div class="cert-section-label">Authorized Tool Certifications (${certs.length})</div>
+                <div class="cert-section-label">Authorized Tool Certifications (${deduplicatedCount})</div>
                 <div class="cert-list-box">
                     ${certsListHtml}
                 </div>

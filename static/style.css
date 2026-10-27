@@ -1371,3 +1371,51 @@ button:hover {
 
 
 
+
+
+.cert-name {
+    font-size: 0.85em;
+    font-weight: 700;
+    color: #f1f5f9 !important;
+    flex: 1;
+}
+
+.cert-icon-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.cert-icon-box svg {
+    width: 22px;
+    height: 22px;
+}
+
+.cert-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+}
+
+.cert-category {
+    font-size: 0.72em;
+    color: #94a3b8;
+    margin-top: 2px;
+}
+
+.cert-plus-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 0.75em;
+    font-weight: 900;
+    color: #ffffff;
+    border-radius: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.25);
+}
