@@ -1,4 +1,4 @@
-// static/script.js - Portal Door v6.2
+// static/script.js - Portal Door v6.3
 
 document.addEventListener('DOMContentLoaded', () => {
     const controlsDiv = document.querySelector('.controls');
@@ -47,10 +47,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const deleteInactivityBadge = document.getElementById('deleteInactivityBadge');
     const deleteTimerText = document.getElementById('deleteTimerText');
 
+    // Neon One CRM Backend Proxy & Social Medium Companion App
+    const NEON_PROXY_URL = "https://neon-kiosk.onrender.com";
+    const COMPANION_APP_PORTAL_URL = "https://socialmediumben.github.io/social_medium_app/portal-media";
+
     // Google Sheet CSV export base URL (spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0)
     const GOOGLE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/gviz/tq?tqx=out:csv";
     
-    // Google Form configuration for public registration
+    // Google Form configuration for legacy fallback
     const GOOGLE_FORM_BASE_URL = "https://docs.google.com/forms/d/e/1FAIpQLScFQcRKtZrXRn6aq8VsziutGSDhlWCKP0TImaFJ1df7h8w3ew/viewform";
     const GOOGLE_FORM_ID_ENTRY = "entry.1513595288"; // Field ID for pre-filling card ID
     const GOOGLE_FORM_SHORT_URL = "https://forms.gle/GBZC6SYXSZS1ZFjM8";
@@ -742,28 +746,91 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Render Registration Screen (QR code to Google Form with pre-filled ID) ---
+    // --- Helper: Fetch Portal Media from Neon One (CRM Single Source of Truth) ---
+    async function fetchNeonOnePortalMedia(tapCard) {
+        try {
+            const cleanCard = String(tapCard).trim();
+            if (!cleanCard) return null;
+
+            console.log(`[Neon One] Querying account for Tap Card "${cleanCard}"...`);
+            const searchRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    searchFields: [{ field: 'Tap Card', operator: 'EQUAL', value: cleanCard }],
+                    outputFields: ['Account ID'],
+                    pagination: { currentPage: 0, pageSize: 1 }
+                })
+            });
+
+            if (!searchRes.ok) return null;
+            const searchData = await searchRes.json();
+            const accountId = searchData.searchResults?.[0]?.['Account ID'];
+            if (!accountId) return null;
+
+            const accRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/${accountId}`);
+            if (!accRes.ok) return null;
+            const accData = await accRes.json();
+
+            const ind = accData.individualAccount;
+            if (!ind) return null;
+
+            const customFields = ind.accountCustomFields || [];
+            const portalField = customFields.find(f => String(f.id) === "117" || (f.name || '').toLowerCase() === "portal media");
+            const mediaUrl = (portalField?.value || '').trim();
+
+            if (!mediaUrl) {
+                console.log(`[Neon One] Account ID ${accountId} found for Tap Card "${cleanCard}", but Portal Media field is blank.`);
+                return null;
+            }
+
+            const contact = ind.primaryContact || {};
+            const displayName = contact.preferredName || contact.firstName || 'Member';
+
+            let mediaType = 'video';
+            if (getYouTubeVideoId(mediaUrl)) {
+                mediaType = 'youtube';
+            } else if (/\.(jpe?g|png|webp|gif)($|\?)/i.test(mediaUrl)) {
+                mediaType = 'image';
+            }
+
+            console.log(`[Neon One] Found active Portal Media for ${displayName} (Tap Card "${cleanCard}"): ${mediaUrl}`);
+
+            return {
+                id: cleanCard,
+                title: `${displayName}'s Portal`,
+                type: mediaType,
+                file_path: mediaUrl,
+                source: 'Neon One'
+            };
+        } catch (err) {
+            console.warn('[Portal-Door] Neon One lookup error:', err);
+            return null;
+        }
+    }
+
+    // --- Render Registration Screen (QR code to Companion App with pre-filled ID) ---
     function renderRegistrationScreen(unregisteredId) {
         isShowingRegistration = true;
         updatePhotoboothVisibility();
 
-        const prefilledFormUrl = `${GOOGLE_FORM_BASE_URL}?usp=pp_url&${GOOGLE_FORM_ID_ENTRY}=${encodeURIComponent(unregisteredId)}`;
-        const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(prefilledFormUrl)}`;
+        const companionUrl = `${COMPANION_APP_PORTAL_URL}?card=${encodeURIComponent(unregisteredId)}`;
+        const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(companionUrl)}`;
 
         mediaDisplay.innerHTML = `
             <div class="registration-container">
-                <span class="reg-badge">NEW PORTAL KEY DETECTED</span>
-                <h2 class="reg-title">Register Your Key</h2>
-                <div class="reg-id-box">Card ID: <span class="reg-id-val">${unregisteredId}</span></div>
+                <span class="reg-badge">NEW OR UNASSIGNED KEY DETECTED</span>
+                <h2 class="reg-title">Set Up Your Portal Media</h2>
+                <div class="reg-id-box">Tap Card: <span class="reg-id-val">${unregisteredId}</span></div>
                 <div class="reg-qr-wrapper">
-                    <img src="${qrApiUrl}" alt="Scan to register key ${unregisteredId}" />
+                    <img src="${qrApiUrl}" alt="Scan to set up key ${unregisteredId}" />
                 </div>
                 <div class="reg-instructions">
                     <div class="reg-step"><span class="reg-step-num">1.</span><span>Scan QR code with your phone camera</span></div>
-                    <div class="reg-step"><span class="reg-step-num">2.</span><span>Choose Title, Type & paste YouTube or Image link</span></div>
-                    <div class="reg-step"><span class="reg-step-num">3.</span><span>Submit form, then tap your card again!</span></div>
+                    <div class="reg-step"><span class="reg-step-num">2.</span><span>Paste a YouTube loop or image link</span></div>
+                    <div class="reg-step"><span class="reg-step-num">3.</span><span>Tap Save in the app, then tap your card again!</span></div>
                 </div>
-                <a class="reg-direct-link" href="${prefilledFormUrl}" target="_blank" rel="noopener">Open Form in Browser</a>
+                <a class="reg-direct-link" href="${companionUrl}" target="_blank" rel="noopener">Open Companion App</a>
                 <div class="reg-hint">Press / on keypad to return home</div>
             </div>
         `;
@@ -1233,18 +1300,25 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.remove('visible');
 
         try {
-            let data = userDatabase[cleanId] || developerDatabase[cleanId] || photoboothDatabase[cleanId];
+            // 1. Check Neon One CRM first as single source of truth for Tap Card Portal Media
+            let data = await fetchNeonOnePortalMedia(cleanId);
 
+            // 2. Fallback to developerDatabase or photoboothDatabase if not set in Neon One
+            if (!data) {
+                data = developerDatabase[cleanId] || photoboothDatabase[cleanId] || userDatabase[cleanId];
+            }
+
+            // 3. Fallback to Google Sheet Users tab if not yet found
             if (!data) {
                 try {
-                    console.log(`[v5.6] Card "${cleanId}" not in memory. Checking Users sheet for fresh submissions...`);
+                    console.log(`[v6.3] Card "${cleanId}" not in Neon One. Checking legacy Users sheet...`);
                     const freshRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Users&t=${Date.now()}`);
                     if (freshRes.ok) {
                         const text = await freshRes.text();
                         userDatabase = extractMediaFromRows(parseCSV(text), 'Users');
                         data = userDatabase[cleanId];
                         if (data) {
-                            console.log(`[v5.6] Fresh submission found in Users tab for ID "${cleanId}"!`);
+                            console.log(`[v6.3] Fallback match found in Users tab for ID "${cleanId}"!`);
                             renderDatasetPreview();
                         }
                     }
@@ -1257,16 +1331,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             mediaDisplay.innerHTML = '';
 
-            // CASE: UNREGISTERED CARD -> Open door to QR Code Registration Screen!
+            // CASE: UNREGISTERED CARD OR NO PORTAL MEDIA IN NEON ONE -> Open door to QR Code Registration!
             if (!data) {
-                console.log(`[v5.6] Card "${cleanId}" is unregistered. Opening door to QR Code...`);
+                console.log(`[v6.3] Card "${cleanId}" has no Portal Media in Neon One. Opening door to QR Code...`);
                 renderRegistrationScreen(cleanId);
                 isAtHomeScreen = false;
                 await playTransition(doorOpenVideoUrl);
                 return;
             }
 
-            // CASE: REGISTERED CARD -> Play media
+            // CASE: REGISTERED CARD WITH MEDIA -> Play media
             await renderAndDisplayMedia(data, cleanId);
 
         } catch (error) {
