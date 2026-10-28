@@ -1947,9 +1947,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (result && (result.url || result.viewUrl)) {
                 const targetUrl = result.url || result.viewUrl;
-                showQrCodeForPhoto(targetUrl);
+                const fileId = result.fileId || '';
+                const targetCardId = currentPlayingMedia?.id || contentIdInput.value.trim() || '';
+
+                // Sync photo to Social Medium App backend proxy so it appears in the member's portal module
+                try {
+                    fetch(`${NEON_PROXY_URL}/api/portal-photos`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            cardId: targetCardId,
+                            url: targetUrl,
+                            fileId: fileId,
+                            timestamp: new Date().toISOString()
+                        })
+                    }).catch(err => console.warn("[v6.7] Photo sync to proxy warning:", err));
+                } catch (e) {}
+
+                showQrCodeForPhoto(targetUrl, targetCardId);
                 isPhotoUploaded = true;
-                showToast("🚀 Saved to Google Drive!");
+                showToast("🚀 Saved! Scan QR to open in Social Medium App");
             } else {
                 throw new Error(result.message || "Upload did not return URL");
             }
@@ -1974,28 +1991,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Display the QR Code pointing to the Google Drive file
-    function showQrCodeForPhoto(fileUrl) {
+    // Display the QR Code pointing to the Social Medium App Portal Media module
+    function showQrCodeForPhoto(fileUrl, cardId) {
         if (!captureQrOverlay || !captureQrImg) return;
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fileUrl)}`;
+
+        // Construct App URL pointing to the Portal Media module with card and photo
+        const appParams = new URLSearchParams();
+        if (cardId) appParams.set('card', cardId);
+        if (fileUrl) appParams.set('newPhoto', fileUrl);
+
+        const appUrl = `${COMPANION_APP_PORTAL_URL}?${appParams.toString()}`;
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(appUrl)}`;
+
         captureQrImg.src = qrUrl;
         if (captureDirectLink) {
-            captureDirectLink.href = fileUrl;
-            captureDirectLink.textContent = "Open in Google Drive";
+            captureDirectLink.href = appUrl;
+            captureDirectLink.textContent = "Open in Social Medium App";
         }
+
+        const qrHeading = captureQrOverlay.querySelector('.qr-heading');
+        if (qrHeading) {
+            qrHeading.textContent = "YOUR PHOTO IS IN THE APP!";
+        }
+        const qrSubtext = captureQrOverlay.querySelector('.qr-subtext');
+        if (qrSubtext) {
+            qrSubtext.textContent = "Scan with your phone to view & download in the app";
+        }
+
         captureQrOverlay.classList.add('active');
     }
 
     // Fallback if Drive Script is not configured yet
     function showLocalDownloadFallback(imageData) {
         if (!captureQrOverlay) return;
+        const targetCardId = currentPlayingMedia?.id || contentIdInput.value.trim() || '';
+        const appUrl = targetCardId
+            ? `${COMPANION_APP_PORTAL_URL}?card=${encodeURIComponent(targetCardId)}`
+            : COMPANION_APP_PORTAL_URL;
+
         if (captureDirectLink) {
-            captureDirectLink.href = imageData;
-            captureDirectLink.download = `Portal_Photo_${Date.now()}.jpg`;
-            captureDirectLink.textContent = "Download Photo to Device";
+            captureDirectLink.href = appUrl;
+            captureDirectLink.textContent = "Open in Social Medium App";
         }
-        // Generate QR code for developer mode setup reminder
-        const helpQr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(window.location.href)}`;
+        const helpQr = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(appUrl)}`;
         if (captureQrImg) captureQrImg.src = helpQr;
         captureQrOverlay.classList.add('active');
     }
