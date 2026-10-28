@@ -245,14 +245,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Fullscreen Toggle ---
     function toggleFullscreen() {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(err => {
-                console.warn(`Fullscreen error: ${err.message}`);
-            });
+        const doc = document;
+        const docEl = document.documentElement;
+        const isFullscreen = doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement;
+
+        if (!isFullscreen) {
+            const req = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
+            if (req) {
+                req.call(docEl).then(() => {
+                    showToast('⛶ Fullscreen ON');
+                }).catch(err => {
+                    console.warn(`Fullscreen error: ${err.message}`);
+                });
+            }
         } else {
-            document.exitFullscreen().catch(err => {
-                console.warn(`Exit fullscreen error: ${err.message}`);
-            });
+            const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
+            if (exit) {
+                exit.call(doc).then(() => {
+                    showToast('⛶ Fullscreen OFF');
+                }).catch(err => {
+                    console.warn(`Exit fullscreen error: ${err.message}`);
+                });
+            }
         }
     }
 
@@ -2121,6 +2135,42 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    const fullscreenToggleBtn = document.getElementById('fullscreenToggleBtn');
+    const refreshDataBtn = document.getElementById('refreshDataBtn');
+    const hotkeyFullscreen = document.getElementById('hotkeyFullscreen');
+    const hotkeyReload = document.getElementById('hotkeyReload');
+    const hotkeyKeypadFullscreen = document.getElementById('hotkeyKeypadFullscreen');
+
+    if (fullscreenToggleBtn) {
+        fullscreenToggleBtn.addEventListener('click', () => {
+            toggleFullscreen();
+        });
+    }
+
+    if (hotkeyFullscreen) {
+        hotkeyFullscreen.addEventListener('click', () => {
+            toggleFullscreen();
+        });
+    }
+
+    if (hotkeyKeypadFullscreen) {
+        hotkeyKeypadFullscreen.addEventListener('click', () => {
+            toggleFullscreen();
+        });
+    }
+
+    if (refreshDataBtn) {
+        refreshDataBtn.addEventListener('click', () => {
+            reloadData();
+        });
+    }
+
+    if (hotkeyReload) {
+        hotkeyReload.addEventListener('click', () => {
+            reloadData();
+        });
+    }
+
     if (soundToggleBtn) {
         soundToggleBtn.addEventListener('click', () => {
             toggleSound();
@@ -2135,9 +2185,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Data reload function ---
     async function reloadData() {
-        const ok = await loadMediaDatabase();
-        mediaTitle.textContent = ok ? "Data Refreshed!" : "Refresh Failed!";
+        showToast('🔄 Refreshing Portal Data...');
+        mediaTitle.textContent = "Refreshing Data...";
         mediaTitle.classList.add('visible');
+        try {
+            const ok = await loadMediaDatabase();
+            mediaTitle.textContent = ok ? "Data Refreshed! 🔄" : "Refresh Failed!";
+            showToast(ok ? '✅ Portal Data Refreshed' : '⚠️ Refresh Failed');
+        } catch (e) {
+            mediaTitle.textContent = "Refresh Failed!";
+            showToast('⚠️ Refresh Failed');
+        }
         setTimeout(() => {
             mediaTitle.classList.remove('visible');
         }, 1500);
@@ -2255,6 +2313,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // --- 3. GLOBAL PORTAL NAVIGATION ---
+
+        // Hotkey: ( or FN+Esc (LaunchCalculator / LaunchApp2 / F11) toggles Fullscreen
+        if (event.key === '(' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2' || event.key === 'F11') {
+            event.preventDefault();
+            toggleFullscreen();
+            return;
+        }
+
+        // Hotkey: ) or F5 reloads Google Sheet / local database
+        if (event.key === ')' || event.code === 'F5' || event.key === 'BrowserRefresh') {
+            event.preventDefault();
+            reloadData();
+            return;
+        }
+
+        // Hotkey: Escape closes Dev Mode if open
+        if (event.key === 'Escape') {
+            if (controlsDiv.classList.contains('visible')) {
+                event.preventDefault();
+                controlsDiv.classList.remove('visible');
+                return;
+            }
+        }
 
         // Hotkey: + (plus / add) starts Photobooth Photo Countdown & Capture
         if (event.key === '+' || event.code === 'NumpadAdd') {

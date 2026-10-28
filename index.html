@@ -17,9 +17,11 @@
         <div class="dev-mode-bar">
             <span class="dev-title"><span class="dev-indicator"></span> DEVELOPER MODE</span>
             <div class="dev-bar-actions">
+                <button id="fullscreenToggleBtn" class="dev-photobooth-btn" title="Toggle Fullscreen (()">⛶ Fullscreen</button>
+                <button id="refreshDataBtn" class="dev-photobooth-btn" title="Reload Database ())">🔄 Refresh</button>
                 <button id="photoboothToggleBtn" class="dev-photobooth-btn" title="Toggle Photobooth Mode (*)">📸 Photo: OFF</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v6.8</span>
+                <span class="version-badge">v6.9</span>
             </div>
         </div>
         <div class="controls-header">
@@ -33,11 +35,11 @@
                 <div class="hotkey-item"><kbd>Backspace</kbd><span>Home</span></div>
                 <div class="hotkey-item"><kbd>/</kbd><span>Certifications</span></div>
                 <div class="hotkey-item"><kbd>-</kbd><span>Edit Media</span></div>
-                <div class="hotkey-item"><kbd>(</kbd><span>Fullscreen</span></div>
+                <div class="hotkey-item" id="hotkeyFullscreen" style="cursor: pointer;" title="Toggle Fullscreen (click or press ()"><kbd>(</kbd><span>Fullscreen</span></div>
                 <div class="hotkey-item"><kbd>.</kbd><span>Sound</span></div>
                 <div class="hotkey-item"><kbd>*</kbd><span>Photo</span></div>
                 <div class="hotkey-item"><kbd>+</kbd><span>Snap</span></div>
-                <div class="hotkey-item"><kbd>)</kbd><span>Reload</span></div>
+                <div class="hotkey-item" id="hotkeyReload" style="cursor: pointer;" title="Reload Database (click or press ))"><kbd>)</kbd><span>Reload</span></div>
                 <div class="hotkey-item"><kbd>Enter</kbd><span>Trigger</span></div>
             </div>
             <div class="hotkeys-row keypad-row">
@@ -45,7 +47,7 @@
                 <div class="hotkey-item"><kbd>FN + 5</kbd><span>Light Mode</span></div>
                 <div class="hotkey-item"><kbd>FN + 4/6</kbd><span>Light Speed</span></div>
                 <div class="hotkey-item"><kbd>FN + +/Enter</kbd><span>Brightness</span></div>
-                <div class="hotkey-item"><kbd>FN + Esc</kbd><span>Fullscreen</span></div>
+                <div class="hotkey-item" id="hotkeyKeypadFullscreen" style="cursor: pointer;" title="Toggle Fullscreen (click or press FN+Esc)"><kbd>FN + Esc</kbd><span>Fullscreen</span></div>
             </div>
         </div>
 
@@ -188,6 +190,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=6.4"></script>
+    <script src="static/script.js?v=6.5"></script>
 </body>
 </html>
