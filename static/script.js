@@ -47,9 +47,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const deleteInactivityBadge = document.getElementById('deleteInactivityBadge');
     const deleteTimerText = document.getElementById('deleteTimerText');
 
-    // Neon One CRM Backend Proxy & Social Medium Companion App
+    // Neon One CRM Backend Proxy & Social Medium App
     const NEON_PROXY_URL = "https://neon-kiosk.onrender.com";
-    const COMPANION_APP_PORTAL_URL = "https://socialmediumben.github.io/social_medium_app/portal-media";
+    const COMPANION_APP_PORTAL_URL = "https://app.socialmedium.space/portal-media";
 
     // Google Sheet CSV export base URL (spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0)
     const GOOGLE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/gviz/tq?tqx=out:csv";
