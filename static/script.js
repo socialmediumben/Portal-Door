@@ -51,6 +51,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const NEON_PROXY_URL = "https://neon-kiosk.onrender.com";
     const COMPANION_APP_PORTAL_URL = "https://app.socialmedium.space/portal-media";
 
+    // --- Helper: Universal NFC / RFID Tap Card UID Normalization ---
+    // Unifies 8-hex ("54dae65a"), 7-byte ("5A:E6:DA:54:25:41:89"), and decimal ("1423631962") to canonical decimal ID
+    function normalizeNfcTapCard(raw) {
+        if (!raw) return '';
+        const clean = String(raw).trim();
+
+        // 1. If it's already an 8-10 digit decimal number, return as-is
+        if (/^\d{8,10}$/.test(clean)) {
+            return clean;
+        }
+
+        // 2. 7-byte (or 4-byte) UID separated by colons, hyphens, or spaces (e.g. from phone "5A:E6:DA:54:25:41:89")
+        const byteParts = clean.split(/[:\-\s]+/);
+        if (byteParts.length >= 4 && byteParts.every(p => /^[0-9a-fA-F]{1,2}$/.test(p))) {
+            const hex4Reverse = byteParts.slice(0, 4).reverse().map(p => p.padStart(2, '0')).join('');
+            const dec = parseInt(hex4Reverse, 16);
+            if (!isNaN(dec)) return dec.toString();
+        }
+
+        // 3. 14-hex character unspaced string (7 bytes from phone, e.g. "5AE6DA54254189")
+        if (/^[0-9a-fA-F]{14}$/.test(clean)) {
+            const b0 = clean.substring(0, 2);
+            const b1 = clean.substring(2, 4);
+            const b2 = clean.substring(4, 6);
+            const b3 = clean.substring(6, 8);
+            const dec = parseInt(b3 + b2 + b1 + b0, 16);
+            if (!isNaN(dec)) return dec.toString();
+        }
+
+        // 4. 8-hex character string (e.g. Portal Door reader "54dae65a")
+        if (/^[0-9a-fA-F]{8}$/.test(clean)) {
+            const dec = parseInt(clean, 16);
+            if (!isNaN(dec)) return dec.toString();
+        }
+
+        return clean;
+    }
+
     // Google Sheet CSV export base URL (spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0)
     const GOOGLE_SHEET_BASE = "https://docs.google.com/spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0/gviz/tq?tqx=out:csv";
     
@@ -753,21 +791,39 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const cleanCard = String(tapCard).trim();
             if (!cleanCard) return null;
+            const normalized = normalizeNfcTapCard(cleanCard);
 
-            console.log(`[Neon One] Looking up full constituent record for Tap Card "${cleanCard}"...`);
-            const searchRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/search`, {
+            console.log(`[Neon One] Looking up full constituent record for Tap Card "${normalized}" (raw: "${cleanCard}")...`);
+            let searchRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/search`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    searchFields: [{ field: 'Tap Card', operator: 'EQUAL', value: cleanCard }],
+                    searchFields: [{ field: 'Tap Card', operator: 'EQUAL', value: normalized }],
                     outputFields: ['Account ID'],
                     pagination: { currentPage: 0, pageSize: 1 }
                 })
             });
 
-            if (!searchRes.ok) return null;
-            const searchData = await searchRes.json();
-            const accountId = searchData.searchResults?.[0]?.['Account ID'];
+            let searchData = searchRes.ok ? await searchRes.json() : null;
+            let accountId = searchData?.searchResults?.[0]?.['Account ID'];
+
+            // Fallback: if not found with normalized decimal and normalized differs from cleanCard, try raw cleanCard
+            if (!accountId && normalized !== cleanCard) {
+                const fallbackRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        searchFields: [{ field: 'Tap Card', operator: 'EQUAL', value: cleanCard }],
+                        outputFields: ['Account ID'],
+                        pagination: { currentPage: 0, pageSize: 1 }
+                    })
+                });
+                if (fallbackRes.ok) {
+                    const fallbackData = await fallbackRes.json();
+                    accountId = fallbackData?.searchResults?.[0]?.['Account ID'];
+                }
+            }
+
             if (!accountId) return null;
 
             const accRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/${accountId}`);
@@ -803,7 +859,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             return {
-                id: cleanCard,
+                id: normalized,
                 title: `${displayName}'s Portal`,
                 type: mediaType,
                 file_path: mediaUrl,
@@ -1362,6 +1418,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const normalizedId = normalizeNfcTapCard(cleanId);
+
         if (photoboothCanvas) {
             photoboothCanvas.classList.remove('visible');
         }
@@ -1372,24 +1430,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             // 1. Check Neon One CRM first as single source of truth for Tap Card Portal Media
-            let data = await fetchNeonOnePortalMedia(cleanId);
+            let data = await fetchNeonOnePortalMedia(normalizedId);
+            if (!data && normalizedId !== cleanId) {
+                data = await fetchNeonOnePortalMedia(cleanId);
+            }
 
             // 2. Fallback to developerDatabase or photoboothDatabase if not set in Neon One
             if (!data) {
-                data = developerDatabase[cleanId] || photoboothDatabase[cleanId] || userDatabase[cleanId];
+                data = developerDatabase[normalizedId] || photoboothDatabase[normalizedId] || userDatabase[normalizedId]
+                    || developerDatabase[cleanId] || photoboothDatabase[cleanId] || userDatabase[cleanId];
             }
 
             // 3. Fallback to Google Sheet Users tab if not yet found
             if (!data) {
                 try {
-                    console.log(`[v6.3] Card "${cleanId}" not in Neon One. Checking legacy Users sheet...`);
+                    console.log(`[v6.8] Card "${normalizedId}" not in Neon One. Checking legacy Users sheet...`);
                     const freshRes = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Users&t=${Date.now()}`);
                     if (freshRes.ok) {
                         const text = await freshRes.text();
                         userDatabase = extractMediaFromRows(parseCSV(text), 'Users');
-                        data = userDatabase[cleanId];
+                        data = userDatabase[normalizedId] || userDatabase[cleanId];
                         if (data) {
-                            console.log(`[v6.3] Fallback match found in Users tab for ID "${cleanId}"!`);
+                            console.log(`[v6.8] Fallback match found in Users tab for ID "${normalizedId}"!`);
                             renderDatasetPreview();
                         }
                     }
@@ -1404,15 +1466,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // CASE: UNREGISTERED CARD OR NO PORTAL MEDIA IN NEON ONE -> Open door to QR Code Registration!
             if (!data) {
-                console.log(`[v6.3] Card "${cleanId}" has no Portal Media in Neon One. Opening door to QR Code...`);
-                renderRegistrationScreen(cleanId);
+                console.log(`[v6.8] Card "${normalizedId}" has no Portal Media in Neon One. Opening door to QR Code...`);
+                renderRegistrationScreen(normalizedId);
                 isAtHomeScreen = false;
                 await playTransition(doorOpenVideoUrl);
                 return;
             }
 
             // CASE: REGISTERED CARD WITH MEDIA -> Play media
-            await renderAndDisplayMedia(data, cleanId);
+            await renderAndDisplayMedia(data, normalizedId);
 
         } catch (error) {
             console.error('[v5.6] Error during media transition:', error);
@@ -2038,13 +2100,24 @@ document.addEventListener('DOMContentLoaded', () => {
         captureQrOverlay.classList.add('active');
     }
 
-    // --- Manual input button listener ---
-    fetchMediaBtn.addEventListener('click', () => {
+    // --- Trigger media fetch helper ---
+    function triggerContentSearch() {
         const idToTrigger = contentIdInput.value.trim();
         if (idToTrigger) {
-            fetchMedia(idToTrigger);
+            const normalizedId = normalizeNfcTapCard(idToTrigger);
+            contentIdInput.value = normalizedId;
+            fetchMedia(normalizedId);
         } else {
             openPhotoboothPickerModal();
+        }
+    }
+
+    // --- Manual input button listener & Enter key listener on contentIdInput ---
+    fetchMediaBtn.addEventListener('click', triggerContentSearch);
+    contentIdInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            triggerContentSearch();
         }
     });
 
@@ -2295,8 +2368,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Digits (0-9): Automatically route numbers directly into the search bar without needing mouse click
-        if (event.key >= '0' && event.key <= '9') {
+        // Hotkey: Enter triggers Media Fetch / Lookup for scanned NFC card or typed ID
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            triggerContentSearch();
+            return;
+        }
+
+        // Hex / Alphanumeric / Digits (0-9, a-f, A-F): Automatically route keystrokes into search bar
+        if (/^[0-9a-fA-F]$/i.test(event.key)) {
             if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
                 event.preventDefault();
                 contentIdInput.value += event.key;
@@ -2304,9 +2384,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Prevent any other non-digit key from typing into the search bar if focused
+        // Prevent other non-hex special characters if contentIdInput is focused (except control keys)
         if (document.activeElement === contentIdInput && event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
-            event.preventDefault();
+            if (!/^[0-9a-fA-F:\-\s]$/i.test(event.key)) {
+                event.preventDefault();
+            }
         }
     });
 
