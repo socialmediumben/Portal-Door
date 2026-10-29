@@ -29,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const captureConfirmHint = document.getElementById('captureConfirmHint');
     const captureInactivityBadge = document.getElementById('captureInactivityBadge');
     const captureTimerText = document.getElementById('captureTimerText');
+    const captureLinkedBandsList = document.getElementById('captureLinkedBandsList');
+    const tapbandHeaderHint = document.getElementById('tapbandHeaderHint');
 
     // Photobooth Media Gallery Modal Elements
     const photoboothGalleryModal = document.getElementById('photoboothGalleryModal');
@@ -134,6 +136,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentBackdropsList = []; // Merged list of available backdrops
     let captureInactivityInterval = null;
     let captureRemainingSeconds = 90; // 90 seconds timeout returning to home screen
+
+    // Multi-member Tap Band Tagging State for Photobooth
+    let taggedTapBands = []; // Array of { cardId: string, displayName: string }
+    let captureNfcBuffer = '';
+    let lastCaptureKeyTime = 0;
+    let backdropDebounceTimer = null;
 
     // Photobooth Media Gallery State
     let isPhotoboothGalleryOpen = false;
@@ -1826,6 +1834,110 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`[v5.4] Switched to backdrop #${index} (${item.title})`);
     }
 
+    // --- HTML Sanitization Helper ---
+    function escapeHtml(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // --- Render Tagged Tap Bands in Capture Modal ---
+    function renderTaggedTapBandsUI() {
+        if (!captureLinkedBandsList) return;
+        captureLinkedBandsList.innerHTML = '';
+
+        if (taggedTapBands.length === 0) {
+            const emptyEl = document.createElement('div');
+            emptyEl.className = 'tapband-empty-hint';
+            emptyEl.innerHTML = `<span class="tapband-pulse-dot"></span><span>Tap your Tap Band to link this photo to your account</span>`;
+            captureLinkedBandsList.appendChild(emptyEl);
+            if (tapbandHeaderHint) tapbandHeaderHint.textContent = "Tap member band(s) to view in app";
+            return;
+        }
+
+        taggedTapBands.forEach(band => {
+            const chip = document.createElement('div');
+            chip.className = 'tapband-chip';
+            chip.innerHTML = `
+                <span class="chip-name">${escapeHtml(band.displayName)}</span>
+                <span class="chip-id">(#${escapeHtml(band.cardId)})</span>
+                <button type="button" class="chip-remove" title="Remove" aria-label="Remove member" onclick="window.removeTaggedTapBand('${escapeHtml(band.cardId)}')">&times;</button>
+            `;
+            captureLinkedBandsList.appendChild(chip);
+        });
+
+        const addMore = document.createElement('span');
+        addMore.className = 'tapband-add-more-hint';
+        addMore.innerHTML = `<span class="tapband-pulse-dot"></span> Tap another band to link together`;
+        captureLinkedBandsList.appendChild(addMore);
+
+        if (tapbandHeaderHint) {
+            tapbandHeaderHint.textContent = `${taggedTapBands.length} member${taggedTapBands.length > 1 ? 's' : ''} linked`;
+        }
+    }
+
+    // --- Add Tagged Tap Band (Multi-user Account Linking) ---
+    async function addTaggedTapBand(rawCardId) {
+        if (!rawCardId) return;
+        const cleanCard = String(rawCardId).trim();
+        const normalized = normalizeNfcTapCard(cleanCard);
+        if (!normalized) return;
+
+        // Check if already tagged
+        if (taggedTapBands.some(b => b.cardId === normalized || b.cardId === cleanCard)) {
+            playBeep(440, 0.1, 0.7, 'triangle');
+            showToast("ℹ️ Tap Band already linked!");
+            return;
+        }
+
+        // Pleasant positive chime
+        playBeep(987, 0.12, 0.85, 'sine');
+        setTimeout(() => playBeep(1318, 0.15, 0.9, 'sine'), 100);
+
+        // Immediate responsive chip while resolving member details
+        const tempEntry = { cardId: normalized, displayName: 'Member' };
+        taggedTapBands.push(tempEntry);
+        renderTaggedTapBandsUI();
+        showToast("📡 Tap Band detected! Linking account...");
+
+        try {
+            // 1. Look up in Neon One CRM
+            let member = await fetchNeonOneMember(normalized);
+            if (!member && normalized !== cleanCard) {
+                member = await fetchNeonOneMember(cleanCard);
+            }
+
+            // 2. Fallback to local datasets
+            let name = member?.displayName;
+            if (!name) {
+                const local = developerDatabase[normalized] || photoboothDatabase[normalized] || userDatabase[normalized]
+                           || developerDatabase[cleanCard] || photoboothDatabase[cleanCard] || userDatabase[cleanCard];
+                if (local?.displayName) name = local.displayName;
+                else if (local?.title) name = local.title.replace("'s Portal", '');
+            }
+
+            if (!name) name = `Member #${normalized}`;
+
+            tempEntry.displayName = name;
+            renderTaggedTapBandsUI();
+            showToast(`✅ Linked ${name}!`);
+        } catch (err) {
+            console.warn("[v6.7] Error resolving member name for Tap Band:", err);
+            renderTaggedTapBandsUI();
+        }
+    }
+
+    // --- Remove Tagged Tap Band ---
+    function removeTaggedTapBand(cardId) {
+        taggedTapBands = taggedTapBands.filter(b => b.cardId !== cardId);
+        playBeep(520, 0.1, 0.6, 'triangle');
+        renderTaggedTapBandsUI();
+    }
+    window.removeTaggedTapBand = removeTaggedTapBand;
+
     // Close the capture modal and return to portal view
     function closeCaptureModal() {
         isCaptureModalOpen = false;
@@ -1833,6 +1945,13 @@ document.addEventListener('DOMContentLoaded', () => {
         isUploadingPhoto = false;
         isPhotoUploaded = false;
         clearCaptureInactivityTimer();
+
+        taggedTapBands = [];
+        captureNfcBuffer = '';
+        if (backdropDebounceTimer) {
+            clearTimeout(backdropDebounceTimer);
+            backdropDebounceTimer = null;
+        }
 
         if (captureModal) captureModal.classList.remove('active');
         if (captureSpinner) captureSpinner.classList.remove('active');
@@ -1925,6 +2044,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Render backdrops and composite
                 renderBackdropSelectorPills();
                 await renderCompositeCapture();
+
+                // Initialize Tap Band list with currently active media user (if applicable)
+                taggedTapBands = [];
+                if (currentPlayingMedia && currentPlayingMedia.id && !currentPlayingMedia.isSceneBackdrop) {
+                    const primaryCard = normalizeNfcTapCard(currentPlayingMedia.id);
+                    const primaryName = currentPlayingMedia.displayName || currentPlayingMedia.title?.replace("'s Portal", '') || `Member #${primaryCard}`;
+                    taggedTapBands.push({ cardId: primaryCard, displayName: primaryName });
+                }
+                renderTaggedTapBandsUI();
 
                 // Start 90-second inactivity timeout
                 startCaptureInactivityTimer();
@@ -2024,25 +2152,39 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result && (result.url || result.viewUrl)) {
                 const targetUrl = result.url || result.viewUrl;
                 const fileId = result.fileId || '';
-                const targetCardId = currentPlayingMedia?.id || contentIdInput.value.trim() || '';
 
-                // Sync photo to Social Medium App backend proxy so it appears in the member's portal module
-                try {
-                    fetch(`${NEON_PROXY_URL}/api/portal-photos`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            cardId: targetCardId,
-                            url: targetUrl,
-                            fileId: fileId,
-                            timestamp: new Date().toISOString()
-                        })
-                    }).catch(err => console.warn("[v6.7] Photo sync to proxy warning:", err));
-                } catch (e) {}
+                // Collect target card IDs from tagged Tap Bands (or fallback to active media / search input)
+                let targetCardIds = taggedTapBands.map(b => b.cardId);
+                if (targetCardIds.length === 0) {
+                    const fallbackId = currentPlayingMedia?.id || contentIdInput.value.trim() || '';
+                    if (fallbackId) targetCardIds.push(normalizeNfcTapCard(fallbackId));
+                }
+                if (targetCardIds.length === 0) {
+                    targetCardIds.push('');
+                }
 
-                showQrCodeForPhoto(targetUrl, targetCardId);
+                console.log(`[v6.7] Syncing capture photo to ${targetCardIds.length} linked member(s):`, targetCardIds);
+
+                // Sync photo to Social Medium App backend proxy for EACH tagged Tap Band
+                targetCardIds.forEach(cardId => {
+                    try {
+                        fetch(`${NEON_PROXY_URL}/api/portal-photos`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                cardId: cardId,
+                                url: targetUrl,
+                                fileId: fileId,
+                                timestamp: new Date().toISOString()
+                            })
+                        }).catch(err => console.warn(`[v6.7] Photo sync warning for card "${cardId}":`, err));
+                    } catch (e) {}
+                });
+
+                showQrCodeForPhoto(targetUrl, targetCardIds);
                 isPhotoUploaded = true;
-                showToast("🚀 Saved! Scan QR to open in Social Medium App");
+                const memberCount = targetCardIds.filter(Boolean).length;
+                showToast(`🚀 Saved for ${memberCount > 0 ? memberCount : 1} member(s)! Scan QR to open in app`);
             } else {
                 throw new Error(result.message || "Upload did not return URL");
             }
@@ -2068,12 +2210,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Display the QR Code pointing to the Social Medium App Portal Media module
-    function showQrCodeForPhoto(fileUrl, cardId) {
+    function showQrCodeForPhoto(fileUrl, cardIds) {
         if (!captureQrOverlay || !captureQrImg) return;
+
+        const idsArray = Array.isArray(cardIds) ? cardIds : (cardIds ? [cardIds] : []);
+        const primaryCardId = idsArray[0] || '';
 
         // Construct App URL pointing to the Portal Media module with card and photo
         const appParams = new URLSearchParams();
-        if (cardId) appParams.set('card', cardId);
+        if (primaryCardId) appParams.set('card', primaryCardId);
         if (fileUrl) appParams.set('newPhoto', fileUrl);
 
         const appUrl = `${COMPANION_APP_PORTAL_URL}?${appParams.toString()}`;
@@ -2087,11 +2232,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const qrHeading = captureQrOverlay.querySelector('.qr-heading');
         if (qrHeading) {
-            qrHeading.textContent = "YOUR PHOTO IS IN THE APP!";
+            if (taggedTapBands.length > 1) {
+                qrHeading.textContent = `SAVED TO ${taggedTapBands.length} MEMBERS' ACCOUNTS!`;
+            } else if (taggedTapBands.length === 1) {
+                qrHeading.textContent = `SAVED TO ${taggedTapBands[0].displayName.toUpperCase()}'S ACCOUNT!`;
+            } else {
+                qrHeading.textContent = "YOUR PHOTO IS IN THE APP!";
+            }
         }
         const qrSubtext = captureQrOverlay.querySelector('.qr-subtext');
         if (qrSubtext) {
-            qrSubtext.textContent = "Scan with your phone to view & download in the app";
+            if (taggedTapBands.length > 1) {
+                const names = taggedTapBands.map(b => b.displayName).join(' & ');
+                qrSubtext.textContent = `Linked to ${names}. Either member can scan with their phone to view and download!`;
+            } else {
+                qrSubtext.textContent = "Scan with your phone to view & download in the app";
+            }
         }
 
         captureQrOverlay.classList.add('active');
@@ -2235,9 +2391,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isCaptureModalOpen) {
             resetCaptureInactivityTimer();
 
+            const now = Date.now();
+            const timeSinceLastKey = now - lastCaptureKeyTime;
+            lastCaptureKeyTime = now;
+
+            // If more than 250ms elapsed between keys, reset NFC burst buffer
+            if (timeSinceLastKey > 250) {
+                captureNfcBuffer = '';
+            }
+
             // Backspace or Esc closes the modal and resumes media (Home / Cancel key)
             if (event.key === 'Backspace' || event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Escape') {
                 event.preventDefault();
+                if (backdropDebounceTimer) {
+                    clearTimeout(backdropDebounceTimer);
+                    backdropDebounceTimer = null;
+                }
                 closeCaptureModal();
                 return;
             }
@@ -2249,30 +2418,63 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Enter uploads/confirms photo
+            // Enter key: check if this is an NFC scan burst or a human Enter keypress
             if (event.key === 'Enter') {
                 event.preventDefault();
+                if (backdropDebounceTimer) {
+                    clearTimeout(backdropDebounceTimer);
+                    backdropDebounceTimer = null;
+                }
+
+                if (captureNfcBuffer.length >= 4 && timeSinceLastKey < 250) {
+                    // NFC RFID scan burst completed!
+                    const scannedCard = captureNfcBuffer.trim();
+                    captureNfcBuffer = '';
+                    console.log(`[v6.7] NFC Tap Band scanned in capture modal: "${scannedCard}"`);
+                    addTaggedTapBand(scannedCard);
+                    return;
+                }
+
+                // Deliberate human Enter press to confirm and save to Google Drive & App
+                captureNfcBuffer = '';
                 uploadCaptureToGoogleDrive();
                 return;
             }
 
-            // Key 0 selects Option "0 (Your Backdrop)" if present
-            if (event.key === '0') {
-                event.preventDefault();
-                if (activeSceneBackdrop) {
-                    selectBackdrop(0);
-                }
-                return;
+            // Buffer hex/alphanumeric characters for RFID/NFC Tap Band reader
+            if (/^[0-9a-fA-F:\-\s]$/i.test(event.key)) {
+                captureNfcBuffer += event.key;
             }
 
-            // Numbers 1-9 switch backdrops
-            if (event.key >= '1' && event.key <= '9') {
+            // Backdrop switching (Keys 0-9):
+            // Debounce by 85ms so that if this is an NFC scan starting with 0-9,
+            // the subsequent character will arrive in < 40ms and cancel the switch!
+            if (event.key >= '0' && event.key <= '9') {
                 event.preventDefault();
-                const num = parseInt(event.key, 10);
-                const targetIdx = activeSceneBackdrop ? num : (num - 1);
-                if (targetIdx < currentBackdropsList.length) {
-                    selectBackdrop(targetIdx);
+                const keyVal = event.key;
+
+                if (backdropDebounceTimer) {
+                    clearTimeout(backdropDebounceTimer);
                 }
+
+                backdropDebounceTimer = setTimeout(() => {
+                    backdropDebounceTimer = null;
+                    // If buffer accumulated more characters, this was an NFC scan, so do NOT switch backdrop
+                    if (captureNfcBuffer.length > 2) return;
+
+                    if (keyVal === '0') {
+                        if (activeSceneBackdrop) {
+                            selectBackdrop(0);
+                        }
+                    } else {
+                        const num = parseInt(keyVal, 10);
+                        const targetIdx = activeSceneBackdrop ? num : (num - 1);
+                        if (targetIdx < currentBackdropsList.length) {
+                            selectBackdrop(targetIdx);
+                        }
+                    }
+                }, 85);
+
                 return;
             }
 

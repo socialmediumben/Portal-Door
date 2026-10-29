@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=6.6">
+    <link rel="stylesheet" href="static/style.css?v=6.7">
     <!-- Google MediaPipe for AI background removal -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -94,7 +94,7 @@
                         <span id="captureTimerText" class="timer-countdown">90s</span>
                     </div>
                 </div>
-                <span class="capture-subtitle">Press number to switch backdrop • Enter to save to Drive</span>
+                <span class="capture-subtitle">Press number to switch backdrop • Tap Band to link account • Enter to save</span>
             </div>
             
             <div class="capture-preview-box">
@@ -120,9 +120,22 @@
                 <!-- Dynamically populated from Google Sheet 'Photobooth' tab -->
             </div>
 
+            <!-- Linked Tap Bands Section (Links photo to one or more members' accounts in the app) -->
+            <div class="capture-tapband-section">
+                <div class="capture-tapband-header">
+                    <span class="tapband-badge-icon">📡</span>
+                    <span class="tapband-header-title">LINK TO TAP BAND (MEMBER ACCOUNT)</span>
+                    <span id="tapbandHeaderHint" class="tapband-header-hint">Tap member band(s) to view in app</span>
+                </div>
+                <div id="captureLinkedBandsList" class="capture-linked-bands-list">
+                    <!-- Populated dynamically with member chips -->
+                </div>
+            </div>
+
             <div class="capture-footer-guide">
-                <span><kbd>0-9</kbd> Change Backdrop</span>
-                <span id="captureConfirmHint"><kbd>Enter</kbd> Save to Drive</span>
+                <span><kbd>0-9</kbd> Backdrop</span>
+                <span><kbd>📡 Tap Band</kbd> Link Member(s)</span>
+                <span id="captureConfirmHint"><kbd>Enter</kbd> Save to Drive & App</span>
                 <span><kbd>Backspace</kbd> Close</span>
             </div>
         </div>
@@ -190,6 +203,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=6.5"></script>
+    <script src="static/script.js?v=6.6"></script>
 </body>
 </html>
