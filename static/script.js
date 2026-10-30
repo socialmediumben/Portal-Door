@@ -208,16 +208,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1800);
     }
 
-    // --- AI Background Removal vs Physical Backdrop Management ---
+    // --- Digital Background vs Physical Background Management ---
     function updateBgRemovalUI() {
         if (!bgRemovalToggleBtn) return;
         if (isAiBgRemovalEnabled) {
-            bgRemovalToggleBtn.textContent = '🎭 AI BG: ON';
-            bgRemovalToggleBtn.title = 'AI Background Removal active (digital backdrops)';
+            bgRemovalToggleBtn.textContent = '🎭 Digital Background';
+            bgRemovalToggleBtn.title = 'Digital Background active (AI removal)';
             bgRemovalToggleBtn.classList.remove('physical-mode');
         } else {
-            bgRemovalToggleBtn.textContent = '🎃 AI BG: OFF (Physical)';
-            bgRemovalToggleBtn.title = 'Raw Camera active for physical backdrop (costume mode)';
+            bgRemovalToggleBtn.textContent = '🎃 Physical Background';
+            bgRemovalToggleBtn.title = 'Physical Background active (raw camera)';
             bgRemovalToggleBtn.classList.add('physical-mode');
         }
     }
@@ -233,11 +233,11 @@ document.addEventListener('DOMContentLoaded', () => {
         isProcessingFrame = false;
         if (isAiBgRemovalEnabled) {
             initMultiPersonSegmentation();
-            showToast('🎭 AI Background Removal: ON');
+            showToast('🎭 Digital Background');
         } else {
-            showToast('🎃 Physical Backdrop Mode (No AI Removal)');
+            showToast('🎃 Physical Background');
         }
-        console.log(`[v7.5] Background removal toggled: ${isAiBgRemovalEnabled ? 'AI_ON' : 'PHYSICAL_BACKDROP'}`);
+        console.log(`[v7.7] Background mode toggled: ${isAiBgRemovalEnabled ? 'DIGITAL_BACKGROUND' : 'PHYSICAL_BACKGROUND'}`);
     }
 
     if (bgRemovalToggleBtn) {
@@ -1923,7 +1923,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isAiBgRemovalEnabled) {
             const pill = document.createElement('div');
             pill.className = 'backdrop-pill selected';
-            pill.innerHTML = `<span>🎃 Physical Backdrop Mode Active (Costumes)</span>`;
+            pill.innerHTML = `<span>🎃 Physical Background</span>`;
+            pill.title = 'Click or press - to switch to Digital Background';
+            pill.addEventListener('click', () => {
+                toggleBgRemoval();
+                renderBackdropSelectorPills();
+                renderCompositeCapture();
+            });
             backdropSelectorBar.appendChild(pill);
             return;
         }
@@ -2603,6 +2609,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }, 85);
 
+                return;
+            }
+
+            // Hotkey: - or P toggles Background Mode (Physical Background vs Digital Background)
+            if (event.key === '-' || event.code === 'NumpadSubtract' || event.code === 'Minus' || event.key === 'p' || event.key === 'P') {
+                event.preventDefault();
+                toggleBgRemoval();
+                renderBackdropSelectorPills();
+                renderCompositeCapture();
                 return;
             }
 
