@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=7.5">
+    <link rel="stylesheet" href="static/style.css?v=7.6">
     <!-- Google MediaPipe for AI Multi-Person Background Segmentation (Groups & Solo) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -20,10 +20,9 @@
                 <button id="fullscreenToggleBtn" class="dev-photobooth-btn" title="Toggle Fullscreen (()">⛶ Fullscreen</button>
                 <button id="refreshDataBtn" class="dev-photobooth-btn" title="Reload Database ())">🔄 Refresh</button>
                 <button id="photoboothToggleBtn" class="dev-photobooth-btn" title="Toggle Photobooth Mode (*)">📸 Photo: OFF</button>
-                <button id="bgRemovalToggleBtn" class="dev-photobooth-btn" title="Toggle AI Background Removal / Physical Backdrop (P)">🎭 AI BG: ON</button>
-                <button id="cameraFitToggleBtn" class="dev-photobooth-btn" title="Toggle camera framing (Uncropped / Fill)">📷 Fit: Uncropped</button>
+                <button id="bgRemovalToggleBtn" class="dev-photobooth-btn" title="Toggle AI Background Removal / Physical Backdrop (-)">🎭 AI BG: ON</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v7.5</span>
+                <span class="version-badge">v7.6</span>
             </div>
         </div>
         <div class="controls-header">
@@ -36,12 +35,11 @@
                 <div class="hotkey-item"><kbd>Tab</kbd><span>Dev Mode</span></div>
                 <div class="hotkey-item"><kbd>Backspace</kbd><span>Home</span></div>
                 <div class="hotkey-item"><kbd>/</kbd><span>Certifications</span></div>
-                <div class="hotkey-item"><kbd>-</kbd><span>Edit Media</span></div>
                 <div class="hotkey-item" id="hotkeyFullscreen" style="cursor: pointer;" title="Toggle Fullscreen (click or press ()"><kbd>(</kbd><span>Fullscreen</span></div>
                 <div class="hotkey-item"><kbd>.</kbd><span>Sound</span></div>
                 <div class="hotkey-item"><kbd>*</kbd><span>Photo</span></div>
                 <div class="hotkey-item"><kbd>+</kbd><span>Snap</span></div>
-                <div class="hotkey-item" id="hotkeyBgRemoval" style="cursor: pointer;" title="Toggle AI Background Removal / Physical Backdrop (P)"><kbd>P</kbd><span>Backdrop</span></div>
+                <div class="hotkey-item" id="hotkeyBgRemoval" style="cursor: pointer;" title="Toggle AI Background Removal / Physical Backdrop (click or press -)"><kbd>-</kbd><span>Backdrop</span></div>
                 <div class="hotkey-item" id="hotkeyReload" style="cursor: pointer;" title="Reload Database (click or press ))"><kbd>)</kbd><span>Reload</span></div>
                 <div class="hotkey-item"><kbd>Enter</kbd><span>Trigger</span></div>
             </div>
@@ -206,6 +204,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=7.5"></script>
+    <script src="static/script.js?v=7.6"></script>
 </body>
 </html>

@@ -479,22 +479,14 @@ button:hover {
     transform: translate(-50%, -50%);
     width: 100vw;
     height: 100vh;
-    object-fit: contain; /* Default: uncropped 1:1 framing matching camera settings */
+    min-width: 100vw;
+    min-height: 100vh;
+    object-fit: cover; /* Always fit to fill the screen vertically and horizontally */
     z-index: 100; /* Directly above mediaDisplay (z-index: 1), below transition overlay (z-index: 2000) */
     pointer-events: none;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.25s ease-in-out;
-}
-
-#photoboothCanvas.fit-cover {
-    min-width: 100vw;
-    min-height: 100vh;
-    object-fit: cover;
-}
-
-#photoboothCanvas.fit-contain {
-    object-fit: contain;
 }
 
 #photoboothCanvas.visible {

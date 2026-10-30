@@ -14,7 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const photoboothToggleBtn = document.getElementById('photoboothToggleBtn');
     const photoboothCanvas = document.getElementById('photoboothCanvas');
     const webcamVideo = document.getElementById('webcamVideo');
-    const cameraFitToggleBtn = document.getElementById('cameraFitToggleBtn');
     const bgRemovalToggleBtn = document.getElementById('bgRemovalToggleBtn');
     const hotkeyBgRemoval = document.getElementById('hotkeyBgRemoval');
     const scriptUrlInput = document.getElementById('scriptUrlInput');
@@ -127,8 +126,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let isProcessingFrame = false;
     let photoboothAnimationId = null;
     localStorage.removeItem('portal_ai_model'); // Clean up any previous model selection so full body is always default
+    localStorage.removeItem('portal_camera_fit'); // Clean up legacy camera fit mode setting
     let isAiBgRemovalEnabled = localStorage.getItem('portal_ai_bg_removal') !== 'false'; // default true, false = physical backdrop / costumes
-    let cameraFitMode = localStorage.getItem('portal_camera_fit') || 'contain'; // 'contain' (1:1 uncropped matching camera settings) or 'cover' (fill screen)
+    const cameraFitMode = 'cover'; // Always fit to fill screen vertically and horizontally
 
     // Capture State
     let isCountingDown = false;
@@ -253,38 +253,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Camera Framing & Fit Mode Management (Preserves Camera's Own Framing & Zoom) ---
-    function applyCameraFitMode() {
-        if (!photoboothCanvas) return;
-        if (cameraFitMode === 'cover') {
-            photoboothCanvas.classList.remove('fit-contain');
-            photoboothCanvas.classList.add('fit-cover');
-            if (cameraFitToggleBtn) cameraFitToggleBtn.textContent = '📷 Fit: Fill Screen';
-        } else {
-            photoboothCanvas.classList.remove('fit-cover');
-            photoboothCanvas.classList.add('fit-contain');
-            if (cameraFitToggleBtn) cameraFitToggleBtn.textContent = '📷 Fit: Uncropped (1:1)';
-        }
-    }
-
-    if (cameraFitToggleBtn) {
-        applyCameraFitMode();
-        cameraFitToggleBtn.addEventListener('click', () => {
-            cameraFitMode = (cameraFitMode === 'cover') ? 'contain' : 'cover';
-            localStorage.setItem('portal_camera_fit', cameraFitMode);
-            applyCameraFitMode();
-            showToast(cameraFitMode === 'cover' ? '📷 Camera: Fill Screen (Cover)' : '📷 Camera: Uncropped 1:1 (Contain)');
-            console.log(`[v7.0] Camera fit mode set to: ${cameraFitMode}`);
-        });
-    }
-
     // --- Update Photobooth Canvas Visibility ---
     function updatePhotoboothVisibility() {
         if (!photoboothCanvas) return;
         const shouldBeVisible = isPhotoboothActive && !isAtHomeScreen && !isShowingRegistration && !isShowingCertifications && !isCaptureModalOpen;
         if (shouldBeVisible) {
             photoboothCanvas.classList.add('visible');
-            applyCameraFitMode();
         } else {
             photoboothCanvas.classList.remove('visible');
             const ctx = photoboothCanvas.getContext('2d');
@@ -2700,20 +2674,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hotkey: - (minus / subtract) brings up the QR code to change/set Portal Media on the companion app
-        if (event.key === '-' || event.code === 'NumpadSubtract' || event.code === 'Minus') {
-            event.preventDefault();
-            const targetCardId = currentPlayingMedia?.id || contentIdInput.value.trim();
-            if (targetCardId) {
-                console.log(`[Hotkey -] Opening QR code to change media for card: ${targetCardId}`);
-                renderRegistrationScreen(targetCardId);
-                isAtHomeScreen = false;
-            } else {
-                mediaTitle.textContent = "Scan a Tap Card first to edit its media";
-                mediaTitle.classList.add('visible');
-                setTimeout(() => mediaTitle.classList.remove('visible'), 2500);
+        // Hotkey: - (minus / subtract / NumpadSubtract) or P toggles AI Background Removal / Physical Backdrop Mode
+        if (event.key === '-' || event.code === 'NumpadSubtract' || event.code === 'Minus' || event.key === 'p' || event.key === 'P') {
+            if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
+                event.preventDefault();
+                toggleBgRemoval();
+                return;
             }
-            return;
         }
 
         // Hotkey: * (asterisk / multiply) toggles Photobooth Mode ON/OFF
@@ -2727,13 +2694,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.key === '.' || event.code === 'NumpadDecimal') {
             event.preventDefault();
             toggleSound();
-            return;
-        }
-
-        // Hotkey: P / p toggles AI Background Removal / Physical Backdrop mode (for Costumes & Physical Backdrops)
-        if ((event.key === 'p' || event.key === 'P') && document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
-            event.preventDefault();
-            toggleBgRemoval();
             return;
         }
 
