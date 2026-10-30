@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const photoboothCanvas = document.getElementById('photoboothCanvas');
     const webcamVideo = document.getElementById('webcamVideo');
     const cameraFitToggleBtn = document.getElementById('cameraFitToggleBtn');
+    const bgRemovalToggleBtn = document.getElementById('bgRemovalToggleBtn');
+    const hotkeyBgRemoval = document.getElementById('hotkeyBgRemoval');
     const scriptUrlInput = document.getElementById('scriptUrlInput');
 
     // Capture Modal Elements
@@ -125,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isProcessingFrame = false;
     let photoboothAnimationId = null;
     localStorage.removeItem('portal_ai_model'); // Clean up any previous model selection so full body is always default
+    let isAiBgRemovalEnabled = localStorage.getItem('portal_ai_bg_removal') !== 'false'; // default true, false = physical backdrop / costumes
     let cameraFitMode = localStorage.getItem('portal_camera_fit') || 'contain'; // 'contain' (1:1 uncropped matching camera settings) or 'cover' (fill screen)
 
     // Capture State
@@ -203,6 +206,51 @@ document.addEventListener('DOMContentLoaded', () => {
         soundToastTimeout = setTimeout(() => {
             soundToast.classList.remove('visible');
         }, 1800);
+    }
+
+    // --- AI Background Removal vs Physical Backdrop Management ---
+    function updateBgRemovalUI() {
+        if (!bgRemovalToggleBtn) return;
+        if (isAiBgRemovalEnabled) {
+            bgRemovalToggleBtn.textContent = '🎭 AI BG: ON';
+            bgRemovalToggleBtn.title = 'AI Background Removal active (digital backdrops)';
+            bgRemovalToggleBtn.classList.remove('physical-mode');
+        } else {
+            bgRemovalToggleBtn.textContent = '🎃 AI BG: OFF (Physical)';
+            bgRemovalToggleBtn.title = 'Raw Camera active for physical backdrop (costume mode)';
+            bgRemovalToggleBtn.classList.add('physical-mode');
+        }
+    }
+
+    function toggleBgRemoval(forcedState) {
+        if (typeof forcedState === 'boolean') {
+            isAiBgRemovalEnabled = forcedState;
+        } else {
+            isAiBgRemovalEnabled = !isAiBgRemovalEnabled;
+        }
+        localStorage.setItem('portal_ai_bg_removal', isAiBgRemovalEnabled);
+        updateBgRemovalUI();
+        isProcessingFrame = false;
+        if (isAiBgRemovalEnabled) {
+            initMultiPersonSegmentation();
+            showToast('🎭 AI Background Removal: ON');
+        } else {
+            showToast('🎃 Physical Backdrop Mode (No AI Removal)');
+        }
+        console.log(`[v7.5] Background removal toggled: ${isAiBgRemovalEnabled ? 'AI_ON' : 'PHYSICAL_BACKDROP'}`);
+    }
+
+    if (bgRemovalToggleBtn) {
+        updateBgRemovalUI();
+        bgRemovalToggleBtn.addEventListener('click', () => {
+            toggleBgRemoval();
+        });
+    }
+
+    if (hotkeyBgRemoval) {
+        hotkeyBgRemoval.addEventListener('click', () => {
+            toggleBgRemoval();
+        });
     }
 
     // --- Camera Framing & Fit Mode Management (Preserves Camera's Own Framing & Zoom) ---
@@ -376,15 +424,33 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isPhotoboothActive) return;
 
         if (!isAtHomeScreen && !isShowingRegistration && !isCaptureModalOpen) {
-            if (webcamVideo && webcamVideo.readyState >= 2 && !isProcessingFrame) {
-                const detector = multiPersonSegmenter || initMultiPersonSegmentation();
-                if (detector) {
-                    isProcessingFrame = true;
-                    try {
-                        await detector.send({ image: webcamVideo });
-                    } catch (err) {
-                        console.warn("[v7.4] Frame segmentation send error:", err);
-                        isProcessingFrame = false;
+            if (webcamVideo && webcamVideo.readyState >= 2) {
+                if (!isAiBgRemovalEnabled) {
+                    // Physical Backdrop Mode: Direct raw camera mirror rendering (0 AI lag, flawless for costumes)
+                    const targetW = webcamVideo.videoWidth || 1080;
+                    const targetH = webcamVideo.videoHeight || 1920;
+                    if (photoboothCanvas.width !== targetW || photoboothCanvas.height !== targetH) {
+                        photoboothCanvas.width = targetW;
+                        photoboothCanvas.height = targetH;
+                    }
+                    const ctx = photoboothCanvas.getContext('2d');
+                    ctx.save();
+                    ctx.clearRect(0, 0, photoboothCanvas.width, photoboothCanvas.height);
+                    // Mirror video horizontally for natural mirror photobooth reflection
+                    ctx.translate(photoboothCanvas.width, 0);
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(webcamVideo, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
+                    ctx.restore();
+                } else if (!isProcessingFrame) {
+                    const detector = multiPersonSegmenter || initMultiPersonSegmentation();
+                    if (detector) {
+                        isProcessingFrame = true;
+                        try {
+                            await detector.send({ image: webcamVideo });
+                        } catch (err) {
+                            console.warn("[v7.5] Frame segmentation send error:", err);
+                            isProcessingFrame = false;
+                        }
                     }
                 }
             }
@@ -1746,6 +1812,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
         ctx.clearRect(0, 0, width, height);
 
+        // Physical Backdrop Mode (Costumes / Raw Camera - No digital backdrop)
+        if (!isAiBgRemovalEnabled) {
+            if (capturedPersonCanvas && capturedPersonCanvas.width > 0) {
+                const hRatio = width / capturedPersonCanvas.width;
+                const vRatio = height / capturedPersonCanvas.height;
+                const ratio = (cameraFitMode === 'cover') ? Math.max(hRatio, vRatio) : Math.min(hRatio, vRatio);
+                const drawW = capturedPersonCanvas.width * ratio;
+                const drawH = capturedPersonCanvas.height * ratio;
+                const centerShiftX = (width - drawW) / 2;
+                const centerShiftY = (cameraFitMode === 'cover') ? (height - drawH) / 2 : (height - drawH);
+                ctx.drawImage(
+                    capturedPersonCanvas,
+                    0, 0, capturedPersonCanvas.width, capturedPersonCanvas.height,
+                    centerShiftX, centerShiftY, drawW, drawH
+                );
+            }
+
+            // Sci-Fi / Portal Watermark
+            ctx.save();
+            ctx.font = 'bold 24px Arial, sans-serif';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.shadowColor = 'rgba(255, 107, 0, 0.9)';
+            ctx.shadowBlur = 10;
+            ctx.textAlign = 'center';
+            ctx.fillText('PORTAL DOOR PHOTOBOOTH', width / 2, height - 35);
+            ctx.restore();
+            return;
+        }
+
         // 1. Draw Backdrop
         let backdropDrawn = false;
         let backdropTitle = "Sci-Fi Portal";
@@ -1850,6 +1945,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderBackdropSelectorPills() {
         if (!backdropSelectorBar) return;
         backdropSelectorBar.innerHTML = '';
+
+        if (!isAiBgRemovalEnabled) {
+            const pill = document.createElement('div');
+            pill.className = 'backdrop-pill selected';
+            pill.innerHTML = `<span>🎃 Physical Backdrop Mode Active (Costumes)</span>`;
+            backdropSelectorBar.appendChild(pill);
+            return;
+        }
 
         currentBackdropsList.forEach((item, index) => {
             const pill = document.createElement('div');
@@ -2627,6 +2730,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Hotkey: P / p toggles AI Background Removal / Physical Backdrop mode (for Costumes & Physical Backdrops)
+        if ((event.key === 'p' || event.key === 'P') && document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
+            event.preventDefault();
+            toggleBgRemoval();
+            return;
+        }
+
         // Hotkey: Tab toggles Developer Mode
         if (event.key === 'Tab') {
             event.preventDefault();
@@ -2747,6 +2857,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Warm up MediaPipe Multi-Person Segmentation in background after short delay so first webcam toggle doesn't lag
     setTimeout(() => {
-        initMultiPersonSegmentation();
+        if (isAiBgRemovalEnabled) {
+            initMultiPersonSegmentation();
+        }
     }, 1200);
 });
