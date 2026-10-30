@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isPhotoboothActive = false;
     let isTogglingPhotobooth = false;
     let webcamStream = null;
-    let poseDetector = null;
+    let multiPersonSegmenter = null;
     let isProcessingFrame = false;
     let photoboothAnimationId = null;
     localStorage.removeItem('portal_ai_model'); // Clean up any previous model selection so full body is always default
@@ -307,37 +307,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- MediaPipe Full-Body Pose Segmentation Setup (Permanent: Head to Toe) ---
-    function initPoseSegmentation() {
-        if (typeof Pose === 'undefined') {
-            console.warn("[v7.3] MediaPipe Pose library not loaded yet.");
+    // --- MediaPipe Multi-Person Background Segmentation Setup (Groups & Solo) ---
+    function initMultiPersonSegmentation() {
+        if (typeof SelfieSegmentation === 'undefined') {
+            console.warn("[v7.4] MediaPipe SelfieSegmentation library not loaded yet.");
             return null;
         }
-        if (poseDetector) return poseDetector;
+        if (multiPersonSegmenter) return multiPersonSegmenter;
 
         try {
-            poseDetector = new Pose({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+            multiPersonSegmenter = new SelfieSegmentation({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
             });
-            poseDetector.setOptions({
-                modelComplexity: 0, // 0 = Lite (real-time 30-60fps inference for full body head-to-toe segmentation)
-                smoothLandmarks: true,
-                enableSegmentation: true, // Enables full-body segmentation mask from head to feet
-                smoothSegmentation: true,
-                minDetectionConfidence: 0.5,
-                minTrackingConfidence: 0.5,
-                selfieMode: true // Automatically mirrors video for natural mirror reflection
+            multiPersonSegmenter.setOptions({
+                modelSelection: 0, // 0 = General 256x256 model (segments all people in frame simultaneously, including groups)
+                selfieMode: true   // Automatically flips video for natural mirror reflection
             });
-            poseDetector.onResults(onSegmentationResults);
-            console.log("[v7.3] MediaPipe Full-Body Pose Segmentation initialized successfully.");
-            return poseDetector;
+            multiPersonSegmenter.onResults(onSegmentationResults);
+            console.log("[v7.4] MediaPipe Multi-Person Segmentation initialized successfully (General Multi-Person Model 0).");
+            return multiPersonSegmenter;
         } catch (err) {
-            console.error("[v7.3] Error initializing Pose detector:", err);
+            console.error("[v7.4] Error initializing MultiPerson segmenter:", err);
             return null;
         }
     }
 
-    // --- Full-Body Head-to-Toe Frame Segmentation Handler ---
+    // --- Multi-Person Frame Segmentation Handler (Groups & Solo) ---
     function onSegmentationResults(results) {
         try {
             if (!photoboothCanvas || !isPhotoboothActive) return;
@@ -357,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             ctx.save();
             ctx.clearRect(0, 0, photoboothCanvas.width, photoboothCanvas.height);
-            // 1. Draw the full-body segmentation mask (head to toe)
+            // 1. Draw the multi-person segmentation mask (captures all people in the frame simultaneously)
             ctx.drawImage(results.segmentationMask, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
             // 2. Composite camera image into the mask
             ctx.globalCompositeOperation = 'source-in';
@@ -371,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             ctx.restore();
         } catch (renderErr) {
-            console.error("[v7.3] onSegmentationResults render error:", renderErr);
+            console.error("[v7.4] onSegmentationResults render error:", renderErr);
         } finally {
             isProcessingFrame = false;
         }
@@ -382,13 +377,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!isAtHomeScreen && !isShowingRegistration && !isCaptureModalOpen) {
             if (webcamVideo && webcamVideo.readyState >= 2 && !isProcessingFrame) {
-                const detector = poseDetector || initPoseSegmentation();
+                const detector = multiPersonSegmenter || initMultiPersonSegmentation();
                 if (detector) {
                     isProcessingFrame = true;
                     try {
                         await detector.send({ image: webcamVideo });
                     } catch (err) {
-                        console.warn("[v7.3] Frame segmentation send error:", err);
+                        console.warn("[v7.4] Frame segmentation send error:", err);
                         isProcessingFrame = false;
                     }
                 }
@@ -451,7 +446,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             if (targetState) {
-                initPoseSegmentation();
+                initMultiPersonSegmentation();
 
                 // Acquire webcam stream with automatic retries for NotReadableError
                 webcamStream = await getWebcamMediaStream();
@@ -2750,8 +2745,8 @@ document.addEventListener('DOMContentLoaded', () => {
     showHomeScreen();
     loadMediaDatabase();
 
-    // Warm up MediaPipe Pose in background after short delay so first webcam toggle doesn't lag
+    // Warm up MediaPipe Multi-Person Segmentation in background after short delay so first webcam toggle doesn't lag
     setTimeout(() => {
-        initPoseSegmentation();
+        initMultiPersonSegmentation();
     }, 1200);
 });
