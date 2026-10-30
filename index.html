@@ -4,10 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=7.1">
-    <!-- Google MediaPipe for AI background removal & full-body pose segmentation -->
+    <link rel="stylesheet" href="static/style.css?v=7.3">
+    <!-- Google MediaPipe for AI full-body pose segmentation (head to toe) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
     <!-- Central Social Medium Certifications & Tool Icons SSOT -->
     <script src="static/sm-certifications.js"></script>
@@ -21,10 +20,9 @@
                 <button id="fullscreenToggleBtn" class="dev-photobooth-btn" title="Toggle Fullscreen (()">⛶ Fullscreen</button>
                 <button id="refreshDataBtn" class="dev-photobooth-btn" title="Reload Database ())">🔄 Refresh</button>
                 <button id="photoboothToggleBtn" class="dev-photobooth-btn" title="Toggle Photobooth Mode (*)">📸 Photo: OFF</button>
-                <button id="aiModelToggleBtn" class="dev-photobooth-btn" title="Toggle AI model (Full Body Pose / Multi-Person Selfie)">🤖 Model: Full Body</button>
                 <button id="cameraFitToggleBtn" class="dev-photobooth-btn" title="Toggle camera framing (Uncropped / Fill)">📷 Fit: Uncropped</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v7.1</span>
+                <span class="version-badge">v7.3</span>
             </div>
         </div>
         <div class="controls-header">
@@ -206,6 +204,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=7.1"></script>
+    <script src="static/script.js?v=7.3"></script>
 </body>
 </html>

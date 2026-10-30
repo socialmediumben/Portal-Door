@@ -14,7 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const photoboothToggleBtn = document.getElementById('photoboothToggleBtn');
     const photoboothCanvas = document.getElementById('photoboothCanvas');
     const webcamVideo = document.getElementById('webcamVideo');
-    const aiModelToggleBtn = document.getElementById('aiModelToggleBtn');
     const cameraFitToggleBtn = document.getElementById('cameraFitToggleBtn');
     const scriptUrlInput = document.getElementById('scriptUrlInput');
 
@@ -122,11 +121,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let isPhotoboothActive = false;
     let isTogglingPhotobooth = false;
     let webcamStream = null;
-    let selfieSegmentation = null;
     let poseDetector = null;
     let isProcessingFrame = false;
     let photoboothAnimationId = null;
-    let aiSegmentationModel = localStorage.getItem('portal_ai_model') || 'pose'; // 'pose' (Full Body) or 'selfie' (Multi-Person Selfie)
+    localStorage.removeItem('portal_ai_model'); // Clean up any previous model selection so full body is always default
     let cameraFitMode = localStorage.getItem('portal_camera_fit') || 'contain'; // 'contain' (1:1 uncropped matching camera settings) or 'cover' (fill screen)
 
     // Capture State
@@ -205,36 +203,6 @@ document.addEventListener('DOMContentLoaded', () => {
         soundToastTimeout = setTimeout(() => {
             soundToast.classList.remove('visible');
         }, 1800);
-    }
-
-    // --- AI Segmentation Model Management (Full Body Pose vs. Multi-Person Selfie) ---
-    function updateAiModelUI() {
-        if (!aiModelToggleBtn) return;
-        if (aiSegmentationModel === 'pose') {
-            aiModelToggleBtn.textContent = '🤖 Model: Full Body (Pose)';
-            aiModelToggleBtn.title = 'Full-body segmentation tracking entire body from head to feet';
-        } else {
-            aiModelToggleBtn.textContent = '🤖 Model: General (Selfie)';
-            aiModelToggleBtn.title = 'General segmentation (supports multiple people)';
-        }
-    }
-
-    if (aiModelToggleBtn) {
-        updateAiModelUI();
-        aiModelToggleBtn.addEventListener('click', () => {
-            aiSegmentationModel = (aiSegmentationModel === 'pose') ? 'selfie' : 'pose';
-            localStorage.setItem('portal_ai_model', aiSegmentationModel);
-            updateAiModelUI();
-            isProcessingFrame = false; // Reset lock so new model can immediately grab the next frame
-            if (aiSegmentationModel === 'pose') {
-                initPoseSegmentation();
-                showToast("🤖 Model: Full Body (Head to Toe)");
-            } else {
-                initSelfieSegmentation();
-                showToast("🤖 Model: General (Multi-Person)");
-            }
-            console.log(`[v7.2] AI Segmentation model switched to: ${aiSegmentationModel}`);
-        });
     }
 
     // --- Camera Framing & Fit Mode Management (Preserves Camera's Own Framing & Zoom) ---
@@ -339,10 +307,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- MediaPipe Full-Body Pose Segmentation Setup (Whole Body: Head to Feet) ---
+    // --- MediaPipe Full-Body Pose Segmentation Setup (Permanent: Head to Toe) ---
     function initPoseSegmentation() {
         if (typeof Pose === 'undefined') {
-            console.warn("[v7.1] MediaPipe Pose not loaded yet.");
+            console.warn("[v7.3] MediaPipe Pose library not loaded yet.");
             return null;
         }
         if (poseDetector) return poseDetector;
@@ -352,66 +320,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
             });
             poseDetector.setOptions({
-                modelComplexity: 1,
+                modelComplexity: 0, // 0 = Lite (real-time 30-60fps inference for full body head-to-toe segmentation)
                 smoothLandmarks: true,
-                enableSegmentation: true, // Enables full-body segmentation mask including legs and feet
+                enableSegmentation: true, // Enables full-body segmentation mask from head to feet
                 smoothSegmentation: true,
                 minDetectionConfidence: 0.5,
                 minTrackingConfidence: 0.5,
-                selfieMode: true // Automatically flips video for natural mirror view
+                selfieMode: true // Automatically mirrors video for natural mirror reflection
             });
             poseDetector.onResults(onSegmentationResults);
-            console.log("[v7.1] MediaPipe Full-Body Pose Segmentation initialized successfully.");
+            console.log("[v7.3] MediaPipe Full-Body Pose Segmentation initialized successfully.");
             return poseDetector;
         } catch (err) {
-            console.error("[v7.1] Error initializing Pose detector:", err);
+            console.error("[v7.3] Error initializing Pose detector:", err);
             return null;
         }
     }
 
-    // --- MediaPipe Selfie Segmentation Setup (Square General Model: modelSelection 0) ---
-    function initSelfieSegmentation() {
-        if (typeof SelfieSegmentation === 'undefined') {
-            console.warn("[v5.1] MediaPipe SelfieSegmentation not loaded yet.");
-            return null;
-        }
-        if (selfieSegmentation) return selfieSegmentation;
-
-        try {
-            selfieSegmentation = new SelfieSegmentation({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
-            });
-            selfieSegmentation.setOptions({
-                modelSelection: 0, // 0 = general 256x256 model (better vertical & body coverage than 144x256 landscape)
-                selfieMode: true   // automatically flips video for natural mirror view
-            });
-            selfieSegmentation.onResults(onSegmentationResults);
-            console.log("[v7.1] MediaPipe SelfieSegmentation initialized successfully (General Model 0).");
-            return selfieSegmentation;
-        } catch (err) {
-            console.error("[v5.1] Error initializing SelfieSegmentation:", err);
-            return null;
-        }
-    }
-
-    // --- Unified Frame Segmentation Handler for Both Models ---
+    // --- Full-Body Head-to-Toe Frame Segmentation Handler ---
     function onSegmentationResults(results) {
         try {
             if (!photoboothCanvas || !isPhotoboothActive) return;
             if (isAtHomeScreen || isShowingRegistration || isCaptureModalOpen) return;
             if (!results.segmentationMask) {
-                console.warn("[v7.2] onSegmentationResults received null segmentationMask");
                 return;
             }
 
-            // Fallback for image source if results.image is missing (e.g. in some Pose versions)
-            const sourceImg = results.image || webcamVideo;
-            if (!sourceImg) return;
-
-            const targetW = sourceImg.videoWidth || sourceImg.width || 1280;
-            const targetH = sourceImg.videoHeight || sourceImg.height || 720;
-
             const ctx = photoboothCanvas.getContext('2d');
+            const targetW = (results.image && results.image.width) || webcamVideo.videoWidth || 1080;
+            const targetH = (results.image && results.image.height) || webcamVideo.videoHeight || 1920;
 
             if (photoboothCanvas.width !== targetW || photoboothCanvas.height !== targetH) {
                 photoboothCanvas.width = targetW;
@@ -420,12 +357,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             ctx.save();
             ctx.clearRect(0, 0, photoboothCanvas.width, photoboothCanvas.height);
+            // 1. Draw the full-body segmentation mask (head to toe)
             ctx.drawImage(results.segmentationMask, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
+            // 2. Composite camera image into the mask
             ctx.globalCompositeOperation = 'source-in';
-            ctx.drawImage(sourceImg, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
+            if (results.image) {
+                ctx.drawImage(results.image, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
+            } else {
+                // If webcamVideo fallback is used, flip horizontally to match mirrored selfieMode mask
+                ctx.translate(photoboothCanvas.width, 0);
+                ctx.scale(-1, 1);
+                ctx.drawImage(webcamVideo, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
+            }
             ctx.restore();
         } catch (renderErr) {
-            console.error("[v7.2] onSegmentationResults render error:", renderErr);
+            console.error("[v7.3] onSegmentationResults render error:", renderErr);
         } finally {
             isProcessingFrame = false;
         }
@@ -436,13 +382,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!isAtHomeScreen && !isShowingRegistration && !isCaptureModalOpen) {
             if (webcamVideo && webcamVideo.readyState >= 2 && !isProcessingFrame) {
-                const activeModel = (aiSegmentationModel === 'pose') ? (poseDetector || initPoseSegmentation()) : (selfieSegmentation || initSelfieSegmentation());
-                if (activeModel) {
+                const detector = poseDetector || initPoseSegmentation();
+                if (detector) {
                     isProcessingFrame = true;
                     try {
-                        await activeModel.send({ image: webcamVideo });
+                        await detector.send({ image: webcamVideo });
                     } catch (err) {
-                        console.warn("[v7.2] Frame segmentation send error:", err);
+                        console.warn("[v7.3] Frame segmentation send error:", err);
                         isProcessingFrame = false;
                     }
                 }
@@ -455,11 +401,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Robust Webcam Stream Acquisition Preserving Camera's Native Framing & Resolution ---
     async function getWebcamMediaStream() {
         const constraintOptions = [
-            // 1. High-resolution 1080p/4K preserving camera's native framing, zoom and aspect ratio
-            { video: { width: { ideal: 1920, max: 3840 }, height: { ideal: 1080, max: 2160 } }, audio: false },
-            // 2. High-quality 720p fallback
-            { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
-            // 3. Fallback generic video stream (most compatible)
+            // 1. Portrait native high resolution (matching 9:16 vertical portal door display & physical camera)
+            { video: { width: { ideal: 1080, max: 2160 }, height: { ideal: 1920, max: 3840 } }, audio: false },
+            // 2. Square/flexible ideal resolution (allows camera driver's native framing without forced 16:9 crop)
+            { video: { width: { ideal: 1920 }, height: { ideal: 1920 } }, audio: false },
+            // 3. Fallback unconstrained video stream (preserves camera's own native settings)
             { video: true, audio: false }
         ];
 
@@ -505,11 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             if (targetState) {
-                if (aiSegmentationModel === 'pose') {
-                    initPoseSegmentation();
-                } else {
-                    initSelfieSegmentation();
-                }
+                initPoseSegmentation();
 
                 // Acquire webcam stream with automatic retries for NotReadableError
                 webcamStream = await getWebcamMediaStream();
@@ -2808,12 +2750,8 @@ document.addEventListener('DOMContentLoaded', () => {
     showHomeScreen();
     loadMediaDatabase();
 
-    // Warm up MediaPipe in background after short delay so first webcam toggle doesn't lag
+    // Warm up MediaPipe Pose in background after short delay so first webcam toggle doesn't lag
     setTimeout(() => {
-        if (aiSegmentationModel === 'pose') {
-            initPoseSegmentation();
-        } else {
-            initSelfieSegmentation();
-        }
+        initPoseSegmentation();
     }, 1200);
 });
