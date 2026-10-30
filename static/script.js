@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const photoboothToggleBtn = document.getElementById('photoboothToggleBtn');
     const photoboothCanvas = document.getElementById('photoboothCanvas');
     const webcamVideo = document.getElementById('webcamVideo');
+    const aiModelToggleBtn = document.getElementById('aiModelToggleBtn');
     const cameraFitToggleBtn = document.getElementById('cameraFitToggleBtn');
     const scriptUrlInput = document.getElementById('scriptUrlInput');
 
@@ -122,8 +123,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let isTogglingPhotobooth = false;
     let webcamStream = null;
     let selfieSegmentation = null;
+    let poseDetector = null;
     let isProcessingFrame = false;
     let photoboothAnimationId = null;
+    let aiSegmentationModel = localStorage.getItem('portal_ai_model') || 'pose'; // 'pose' (Full Body) or 'selfie' (Multi-Person Selfie)
     let cameraFitMode = localStorage.getItem('portal_camera_fit') || 'contain'; // 'contain' (1:1 uncropped matching camera settings) or 'cover' (fill screen)
 
     // Capture State
@@ -202,6 +205,35 @@ document.addEventListener('DOMContentLoaded', () => {
         soundToastTimeout = setTimeout(() => {
             soundToast.classList.remove('visible');
         }, 1800);
+    }
+
+    // --- AI Segmentation Model Management (Full Body Pose vs. Multi-Person Selfie) ---
+    function updateAiModelUI() {
+        if (!aiModelToggleBtn) return;
+        if (aiSegmentationModel === 'pose') {
+            aiModelToggleBtn.textContent = '🤖 Model: Full Body (Pose)';
+            aiModelToggleBtn.title = 'Full-body segmentation tracking entire body from head to feet';
+        } else {
+            aiModelToggleBtn.textContent = '🤖 Model: General (Selfie)';
+            aiModelToggleBtn.title = 'General segmentation (supports multiple people)';
+        }
+    }
+
+    if (aiModelToggleBtn) {
+        updateAiModelUI();
+        aiModelToggleBtn.addEventListener('click', () => {
+            aiSegmentationModel = (aiSegmentationModel === 'pose') ? 'selfie' : 'pose';
+            localStorage.setItem('portal_ai_model', aiSegmentationModel);
+            updateAiModelUI();
+            if (aiSegmentationModel === 'pose') {
+                initPoseSegmentation();
+                showToast("🤖 Model: Full Body (Head to Toe)");
+            } else {
+                initSelfieSegmentation();
+                showToast("🤖 Model: General (Multi-Person)");
+            }
+            console.log(`[v7.1] AI Segmentation model switched to: ${aiSegmentationModel}`);
+        });
     }
 
     // --- Camera Framing & Fit Mode Management (Preserves Camera's Own Framing & Zoom) ---
@@ -306,7 +338,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- MediaPipe Selfie Segmentation Setup ---
+    // --- MediaPipe Full-Body Pose Segmentation Setup (Whole Body: Head to Feet) ---
+    function initPoseSegmentation() {
+        if (typeof Pose === 'undefined') {
+            console.warn("[v7.1] MediaPipe Pose not loaded yet.");
+            return null;
+        }
+        if (poseDetector) return poseDetector;
+
+        try {
+            poseDetector = new Pose({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+            });
+            poseDetector.setOptions({
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                enableSegmentation: true, // Enables full-body segmentation mask including legs and feet
+                smoothSegmentation: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5,
+                selfieMode: true // Automatically flips video for natural mirror view
+            });
+            poseDetector.onResults(onSegmentationResults);
+            console.log("[v7.1] MediaPipe Full-Body Pose Segmentation initialized successfully.");
+            return poseDetector;
+        } catch (err) {
+            console.error("[v7.1] Error initializing Pose detector:", err);
+            return null;
+        }
+    }
+
+    // --- MediaPipe Selfie Segmentation Setup (Square General Model: modelSelection 0) ---
     function initSelfieSegmentation() {
         if (typeof SelfieSegmentation === 'undefined') {
             console.warn("[v5.1] MediaPipe SelfieSegmentation not loaded yet.");
@@ -319,11 +381,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
             });
             selfieSegmentation.setOptions({
-                modelSelection: 1, // landscape model (high accuracy)
+                modelSelection: 0, // 0 = general 256x256 model (better vertical & body coverage than 144x256 landscape)
                 selfieMode: true   // automatically flips video for natural mirror view
             });
-            selfieSegmentation.onResults(onSelfieSegmentationResults);
-            console.log("[v5.1] MediaPipe SelfieSegmentation initialized successfully.");
+            selfieSegmentation.onResults(onSegmentationResults);
+            console.log("[v7.1] MediaPipe SelfieSegmentation initialized successfully (General Model 0).");
             return selfieSegmentation;
         } catch (err) {
             console.error("[v5.1] Error initializing SelfieSegmentation:", err);
@@ -331,10 +393,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function onSelfieSegmentationResults(results) {
+    // --- Unified Frame Segmentation Handler for Both Models ---
+    function onSegmentationResults(results) {
         try {
             if (!photoboothCanvas || !isPhotoboothActive) return;
             if (isAtHomeScreen || isShowingRegistration || isCaptureModalOpen) return;
+            if (!results.segmentationMask || !results.image) return;
 
             const ctx = photoboothCanvas.getContext('2d');
 
@@ -358,13 +422,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isPhotoboothActive) return;
 
         if (!isAtHomeScreen && !isShowingRegistration && !isCaptureModalOpen) {
-            if (webcamVideo && webcamVideo.readyState >= 2 && !isProcessingFrame && selfieSegmentation) {
-                isProcessingFrame = true;
-                try {
-                    await selfieSegmentation.send({ image: webcamVideo });
-                } catch (err) {
-                    console.warn("[v5.1] Frame segmentation error:", err);
-                    isProcessingFrame = false;
+            if (webcamVideo && webcamVideo.readyState >= 2 && !isProcessingFrame) {
+                const activeModel = (aiSegmentationModel === 'pose' && poseDetector) ? poseDetector : selfieSegmentation;
+                if (activeModel) {
+                    isProcessingFrame = true;
+                    try {
+                        await activeModel.send({ image: webcamVideo });
+                    } catch (err) {
+                        console.warn("[v7.1] Frame segmentation error:", err);
+                        isProcessingFrame = false;
+                    }
                 }
             }
         }
@@ -425,7 +492,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             if (targetState) {
-                initSelfieSegmentation();
+                if (aiSegmentationModel === 'pose') {
+                    initPoseSegmentation();
+                } else {
+                    initSelfieSegmentation();
+                }
 
                 // Acquire webcam stream with automatic retries for NotReadableError
                 webcamStream = await getWebcamMediaStream();
@@ -2726,6 +2797,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Warm up MediaPipe in background after short delay so first webcam toggle doesn't lag
     setTimeout(() => {
-        initSelfieSegmentation();
+        if (aiSegmentationModel === 'pose') {
+            initPoseSegmentation();
+        } else {
+            initSelfieSegmentation();
+        }
     }, 1200);
 });
