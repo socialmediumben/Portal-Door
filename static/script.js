@@ -225,6 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
             aiSegmentationModel = (aiSegmentationModel === 'pose') ? 'selfie' : 'pose';
             localStorage.setItem('portal_ai_model', aiSegmentationModel);
             updateAiModelUI();
+            isProcessingFrame = false; // Reset lock so new model can immediately grab the next frame
             if (aiSegmentationModel === 'pose') {
                 initPoseSegmentation();
                 showToast("🤖 Model: Full Body (Head to Toe)");
@@ -232,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 initSelfieSegmentation();
                 showToast("🤖 Model: General (Multi-Person)");
             }
-            console.log(`[v7.1] AI Segmentation model switched to: ${aiSegmentationModel}`);
+            console.log(`[v7.2] AI Segmentation model switched to: ${aiSegmentationModel}`);
         });
     }
 
@@ -398,21 +399,33 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             if (!photoboothCanvas || !isPhotoboothActive) return;
             if (isAtHomeScreen || isShowingRegistration || isCaptureModalOpen) return;
-            if (!results.segmentationMask || !results.image) return;
+            if (!results.segmentationMask) {
+                console.warn("[v7.2] onSegmentationResults received null segmentationMask");
+                return;
+            }
+
+            // Fallback for image source if results.image is missing (e.g. in some Pose versions)
+            const sourceImg = results.image || webcamVideo;
+            if (!sourceImg) return;
+
+            const targetW = sourceImg.videoWidth || sourceImg.width || 1280;
+            const targetH = sourceImg.videoHeight || sourceImg.height || 720;
 
             const ctx = photoboothCanvas.getContext('2d');
 
-            if (photoboothCanvas.width !== results.image.width || photoboothCanvas.height !== results.image.height) {
-                photoboothCanvas.width = results.image.width;
-                photoboothCanvas.height = results.image.height;
+            if (photoboothCanvas.width !== targetW || photoboothCanvas.height !== targetH) {
+                photoboothCanvas.width = targetW;
+                photoboothCanvas.height = targetH;
             }
 
             ctx.save();
             ctx.clearRect(0, 0, photoboothCanvas.width, photoboothCanvas.height);
             ctx.drawImage(results.segmentationMask, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
             ctx.globalCompositeOperation = 'source-in';
-            ctx.drawImage(results.image, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
+            ctx.drawImage(sourceImg, 0, 0, photoboothCanvas.width, photoboothCanvas.height);
             ctx.restore();
+        } catch (renderErr) {
+            console.error("[v7.2] onSegmentationResults render error:", renderErr);
         } finally {
             isProcessingFrame = false;
         }
@@ -423,13 +436,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!isAtHomeScreen && !isShowingRegistration && !isCaptureModalOpen) {
             if (webcamVideo && webcamVideo.readyState >= 2 && !isProcessingFrame) {
-                const activeModel = (aiSegmentationModel === 'pose' && poseDetector) ? poseDetector : selfieSegmentation;
+                const activeModel = (aiSegmentationModel === 'pose') ? (poseDetector || initPoseSegmentation()) : (selfieSegmentation || initSelfieSegmentation());
                 if (activeModel) {
                     isProcessingFrame = true;
                     try {
                         await activeModel.send({ image: webcamVideo });
                     } catch (err) {
-                        console.warn("[v7.1] Frame segmentation error:", err);
+                        console.warn("[v7.2] Frame segmentation send error:", err);
                         isProcessingFrame = false;
                     }
                 }
