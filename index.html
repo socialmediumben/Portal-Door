@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=6.7">
+    <link rel="stylesheet" href="static/style.css?v=7.0">
     <!-- Google MediaPipe for AI background removal -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -20,8 +20,9 @@
                 <button id="fullscreenToggleBtn" class="dev-photobooth-btn" title="Toggle Fullscreen (()">⛶ Fullscreen</button>
                 <button id="refreshDataBtn" class="dev-photobooth-btn" title="Reload Database ())">🔄 Refresh</button>
                 <button id="photoboothToggleBtn" class="dev-photobooth-btn" title="Toggle Photobooth Mode (*)">📸 Photo: OFF</button>
+                <button id="cameraFitToggleBtn" class="dev-photobooth-btn" title="Toggle camera framing (Uncropped / Fill)">📷 Fit: Uncropped</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v6.9</span>
+                <span class="version-badge">v7.0</span>
             </div>
         </div>
         <div class="controls-header">
@@ -203,6 +204,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=6.6"></script>
+    <script src="static/script.js?v=7.0"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const photoboothToggleBtn = document.getElementById('photoboothToggleBtn');
     const photoboothCanvas = document.getElementById('photoboothCanvas');
     const webcamVideo = document.getElementById('webcamVideo');
+    const cameraFitToggleBtn = document.getElementById('cameraFitToggleBtn');
     const scriptUrlInput = document.getElementById('scriptUrlInput');
 
     // Capture Modal Elements
@@ -123,6 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let selfieSegmentation = null;
     let isProcessingFrame = false;
     let photoboothAnimationId = null;
+    let cameraFitMode = localStorage.getItem('portal_camera_fit') || 'contain'; // 'contain' (1:1 uncropped matching camera settings) or 'cover' (fill screen)
 
     // Capture State
     let isCountingDown = false;
@@ -202,12 +204,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1800);
     }
 
+    // --- Camera Framing & Fit Mode Management (Preserves Camera's Own Framing & Zoom) ---
+    function applyCameraFitMode() {
+        if (!photoboothCanvas) return;
+        if (cameraFitMode === 'cover') {
+            photoboothCanvas.classList.remove('fit-contain');
+            photoboothCanvas.classList.add('fit-cover');
+            if (cameraFitToggleBtn) cameraFitToggleBtn.textContent = '📷 Fit: Fill Screen';
+        } else {
+            photoboothCanvas.classList.remove('fit-cover');
+            photoboothCanvas.classList.add('fit-contain');
+            if (cameraFitToggleBtn) cameraFitToggleBtn.textContent = '📷 Fit: Uncropped (1:1)';
+        }
+    }
+
+    if (cameraFitToggleBtn) {
+        applyCameraFitMode();
+        cameraFitToggleBtn.addEventListener('click', () => {
+            cameraFitMode = (cameraFitMode === 'cover') ? 'contain' : 'cover';
+            localStorage.setItem('portal_camera_fit', cameraFitMode);
+            applyCameraFitMode();
+            showToast(cameraFitMode === 'cover' ? '📷 Camera: Fill Screen (Cover)' : '📷 Camera: Uncropped 1:1 (Contain)');
+            console.log(`[v7.0] Camera fit mode set to: ${cameraFitMode}`);
+        });
+    }
+
     // --- Update Photobooth Canvas Visibility ---
     function updatePhotoboothVisibility() {
         if (!photoboothCanvas) return;
         const shouldBeVisible = isPhotoboothActive && !isAtHomeScreen && !isShowingRegistration && !isShowingCertifications && !isCaptureModalOpen;
         if (shouldBeVisible) {
             photoboothCanvas.classList.add('visible');
+            applyCameraFitMode();
         } else {
             photoboothCanvas.classList.remove('visible');
             const ctx = photoboothCanvas.getContext('2d');
@@ -344,12 +372,12 @@ document.addEventListener('DOMContentLoaded', () => {
         photoboothAnimationId = requestAnimationFrame(renderPhotoboothLoop);
     }
 
-    // --- Robust Webcam Stream Acquisition with Automatic Retries & Fallbacks ---
+    // --- Robust Webcam Stream Acquisition Preserving Camera's Native Framing & Resolution ---
     async function getWebcamMediaStream() {
         const constraintOptions = [
-            // 1. High-quality 720p facing user
-            { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false },
-            // 2. Ideal 720p without strict facingMode
+            // 1. High-resolution 1080p/4K preserving camera's native framing, zoom and aspect ratio
+            { video: { width: { ideal: 1920, max: 3840 }, height: { ideal: 1080, max: 2160 } }, audio: false },
+            // 2. High-quality 720p fallback
             { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
             // 3. Fallback generic video stream (most compatible)
             { video: true, audio: false }
@@ -1770,11 +1798,11 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.restore();
         }
 
-        // 2. Draw Person Cutout on top (portrait framing anchored to bottom)
+        // 2. Draw Person Cutout on top (respecting cameraFitMode: uncropped 1:1 or fill)
         if (capturedPersonCanvas && capturedPersonCanvas.width > 0) {
             const hRatio = width / capturedPersonCanvas.width;
             const vRatio = height / capturedPersonCanvas.height;
-            const ratio = Math.max(hRatio, vRatio);
+            const ratio = (cameraFitMode === 'cover') ? Math.max(hRatio, vRatio) : Math.min(hRatio, vRatio);
             const drawW = capturedPersonCanvas.width * ratio;
             const drawH = capturedPersonCanvas.height * ratio;
             const centerShiftX = (width - drawW) / 2;
@@ -2094,7 +2122,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     cCtx.fillStyle = grad;
                     cCtx.fillRect(0, 0, 1080, 1620);
                     if (capturedPersonCanvas && capturedPersonCanvas.width > 0) {
-                        const ratio = Math.max(1080 / capturedPersonCanvas.width, 1620 / capturedPersonCanvas.height);
+                        const ratio = (cameraFitMode === 'cover')
+                            ? Math.max(1080 / capturedPersonCanvas.width, 1620 / capturedPersonCanvas.height)
+                            : Math.min(1080 / capturedPersonCanvas.width, 1620 / capturedPersonCanvas.height);
                         const drawW = capturedPersonCanvas.width * ratio;
                         const drawH = capturedPersonCanvas.height * ratio;
                         cCtx.drawImage(
