@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const captureQrOverlay = document.getElementById('captureQrOverlay');
     const captureQrImg = document.getElementById('captureQrImg');
     const captureDirectLink = document.getElementById('captureDirectLink');
+    const qrDoneBtn = document.getElementById('qrDoneBtn');
     const backdropSelectorBar = document.getElementById('backdropSelectorBar');
     const captureConfirmHint = document.getElementById('captureConfirmHint');
     const contestActionRow = document.getElementById('contestActionRow');
@@ -319,6 +320,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (contestUploadBtn) {
         contestUploadBtn.addEventListener('click', () => {
             uploadPhotoToCostumeContest();
+        });
+    }
+
+    if (qrDoneBtn) {
+        qrDoneBtn.addEventListener('click', () => {
+            closeCaptureModal();
         });
     }
 
@@ -1646,6 +1653,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const namesList = taggedTapBands.map(b => b.displayName).join(', ');
                     showToast(`👋 Linked: ${namesList}! Press + to snap.`);
                     playBeep(920, 0.15, 0.8, 'triangle');
+                    resetPhysicalModeIdleTimer();
                 });
             }
             return;
@@ -2204,6 +2212,44 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.removeTaggedTapBand = removeTaggedTapBand;
 
+    // Inactivity reset timer for Physical Background Mode (resets linked member after 60s of inactivity if no photo taken)
+    let physicalModeIdleTimer = null;
+    function resetPhysicalModeIdleTimer() {
+        if (physicalModeIdleTimer) {
+            clearTimeout(physicalModeIdleTimer);
+            physicalModeIdleTimer = null;
+        }
+        if (!isAiBgRemovalEnabled && (taggedTapBands.length > 0 || currentPlayingMedia)) {
+            physicalModeIdleTimer = setTimeout(() => {
+                if (!isCaptureModalOpen && !isCountingDown) {
+                    console.log("[v8.1] 60s idle timeout reached without photo capture. Unlinking attendee.");
+                    unlinkCurrentPerson();
+                    showToast("Portal reset. Tap band to link.");
+                }
+            }, 60000);
+        }
+    }
+
+    // Unlink the current attendee/member so subsequent photos never link to the previous person
+    function unlinkCurrentPerson() {
+        taggedTapBands = [];
+        currentPlayingMedia = null;
+        if (contentIdInput) contentIdInput.value = '';
+        if (mediaTitle) {
+            mediaTitle.textContent = '';
+            mediaTitle.classList.remove('visible');
+        }
+        if (!isAiBgRemovalEnabled && mediaDisplay) {
+            mediaDisplay.innerHTML = '';
+        }
+        renderTaggedTapBandsUI();
+        if (physicalModeIdleTimer) {
+            clearTimeout(physicalModeIdleTimer);
+            physicalModeIdleTimer = null;
+        }
+        console.log("[v8.1] Portal unlinked from person. State reset for next attendee.");
+    }
+
     // Close the capture modal and return to portal view
     function closeCaptureModal() {
         isCaptureModalOpen = false;
@@ -2212,7 +2258,9 @@ document.addEventListener('DOMContentLoaded', () => {
         isPhotoUploaded = false;
         clearCaptureInactivityTimer();
 
-        taggedTapBands = [];
+        // Unlink so next photo session never attributes to this person
+        unlinkCurrentPerson();
+
         captureNfcBuffer = '';
         if (backdropDebounceTimer) {
             clearTimeout(backdropDebounceTimer);
@@ -2238,12 +2286,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updatePhotoboothVisibility();
         updateCostumeContestUI();
-        resumeActiveMedia();
+
+        if (isAiBgRemovalEnabled) {
+            showHomeScreen();
+        } else {
+            if (mediaDisplay) mediaDisplay.innerHTML = '';
+        }
     }
 
     // Start 5-4-3-2-1 Countdown and Snapshot
     async function startPhotoCountdown() {
         if (isCountingDown || isCaptureModalOpen) return;
+        if (physicalModeIdleTimer) {
+            clearTimeout(physicalModeIdleTimer);
+            physicalModeIdleTimer = null;
+        }
 
         // Pause media immediately where it is
         pauseActiveMedia();
@@ -2321,9 +2378,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderBackdropSelectorPills();
                 await renderCompositeCapture();
 
-                // Initialize Tap Band list with currently active media user (if applicable)
-                taggedTapBands = [];
-                if (currentPlayingMedia && currentPlayingMedia.id && !currentPlayingMedia.isSceneBackdrop) {
+                // Retain any members tagged prior to countdown (e.g. tapped before pressing +).
+                // Only if no members were pre-tagged, check currentPlayingMedia as fallback.
+                if (taggedTapBands.length === 0 && currentPlayingMedia && currentPlayingMedia.id && !currentPlayingMedia.isSceneBackdrop) {
                     const primaryCard = normalizeNfcTapCard(currentPlayingMedia.id);
                     const primaryName = currentPlayingMedia.displayName || currentPlayingMedia.title?.replace("'s Portal", '') || `Member #${primaryCard}`;
                     taggedTapBands.push({ cardId: primaryCard, displayName: primaryName });
@@ -2778,6 +2835,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Hotkey: + or = (Retake or start next photo) or Space (when photo is uploaded)
+            if (event.key === '+' || event.code === 'NumpadAdd' || event.key === '=' || ((isPhotoUploaded || isContestPhotoSubmitted) && (event.key === ' ' || event.code === 'Space'))) {
+                event.preventDefault();
+                if (!isUploadingPhoto) {
+                    closeCaptureModal();
+                    startPhotoCountdown();
+                    return;
+                }
+            }
+
             // Enter key: check if this is an NFC scan burst or a human Enter keypress
             if (event.key === 'Enter') {
                 event.preventDefault();
@@ -2790,8 +2857,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     // NFC RFID scan burst completed!
                     const scannedCard = captureNfcBuffer.trim();
                     captureNfcBuffer = '';
-                    console.log(`[v6.7] NFC Tap Band scanned in capture modal: "${scannedCard}"`);
+                    console.log(`[v8.1] NFC Tap Band scanned in capture modal: "${scannedCard}"`);
+                    if (isPhotoUploaded || isContestPhotoSubmitted) {
+                        // Previous photo is already saved! Close old modal and link newly scanned person for next photo
+                        closeCaptureModal();
+                        fetchMedia(scannedCard);
+                        return;
+                    }
                     addTaggedTapBand(scannedCard);
+                    return;
+                }
+
+                if (isPhotoUploaded || isContestPhotoSubmitted) {
+                    // Photo was already saved and QR is on screen. Enter closes and resets for next person
+                    captureNfcBuffer = '';
+                    closeCaptureModal();
                     return;
                 }
 
@@ -3065,7 +3145,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial startup
-    console.log("Portal Door v7.9 initialized (Costume Contest Mode ready with - hotkey).");
+    console.log("Portal Door v8.1 initialized (Automatic unlinking after save/cancel ready).");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();

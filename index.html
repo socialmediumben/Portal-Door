@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=8.0">
+    <link rel="stylesheet" href="static/style.css?v=8.1">
     <!-- Google MediaPipe for AI Multi-Person Background Segmentation (Groups & Solo) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -23,7 +23,7 @@
                 <button id="bgRemovalToggleBtn" class="dev-photobooth-btn" title="Toggle Physical / Digital Background (-)">🎭 Digital Background</button>
                 <button id="costumeContestToggleBtn" class="dev-photobooth-btn" title="Toggle Costume Contest Mode (C)">🏆 Contest: OFF</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v8.0</span>
+                <span class="version-badge">v8.1</span>
             </div>
         </div>
         <div class="controls-header">
@@ -114,6 +114,7 @@
                         <img id="captureQrImg" src="" alt="Scan to download" />
                     </div>
                     <span class="qr-subtext">Scan with your phone to download</span>
+                    <button id="qrDoneBtn" class="qr-done-btn">Done / Next Photo (+)</button>
                     <a id="captureDirectLink" class="qr-direct-link" href="#" target="_blank" rel="noopener">Open in Google Drive</a>
                 </div>
             </div>
@@ -140,6 +141,7 @@
                 <span><kbd>📡 Tap Band</kbd> Link Member(s)</span>
                 <span id="captureConfirmHint"><kbd>Enter</kbd> Save to Drive & App</span>
                 <span id="contestHotkeyHint" style="display: none;"><kbd>-</kbd> Submit to Contest</span>
+                <span><kbd>+</kbd> Retake / Next</span>
                 <span><kbd>Backspace</kbd> Close</span>
             </div>
 
@@ -214,6 +216,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=8.0"></script>
+    <script src="static/script.js?v=8.1"></script>
 </body>
 </html>

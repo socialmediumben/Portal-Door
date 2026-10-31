@@ -1117,6 +1117,25 @@ button:hover {
     cursor: pointer;
 }
 
+.qr-done-btn {
+    background: linear-gradient(135deg, #ff7700, #ff4500);
+    color: #ffffff;
+    font-size: 0.85em;
+    font-weight: 700;
+    padding: 6px 16px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(255, 107, 0, 0.4);
+    transition: transform 0.15s ease, background 0.15s ease;
+    margin-top: 4px;
+}
+
+.qr-done-btn:hover {
+    transform: scale(1.04);
+    background: linear-gradient(135deg, #ff9500, #ff5500);
+}
+
 /* Backdrop Switcher Bar */
 .backdrop-selector-bar {
     display: flex;
