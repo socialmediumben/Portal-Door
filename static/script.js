@@ -244,9 +244,19 @@ document.addEventListener('DOMContentLoaded', () => {
             initMultiPersonSegmentation();
             showToast('🎭 Digital Background');
         } else {
-            showToast('🎃 Physical Background');
+            // Physical Background Mode activated:
+            // 1. Clear any active personal media / closed door image
+            pauseActiveMedia();
+            mediaDisplay.innerHTML = '';
+            isAtHomeScreen = false;
+            // 2. Automatically engage photobooth live camera if not active
+            if (!isPhotoboothActive) {
+                togglePhotobooth(true);
+            }
+            updatePhotoboothVisibility();
+            showToast('🎃 Physical Background (Party Mode)');
         }
-        console.log(`[v7.7] Background mode toggled: ${isAiBgRemovalEnabled ? 'DIGITAL_BACKGROUND' : 'PHYSICAL_BACKGROUND'}`);
+        console.log(`[v8.0] Background mode toggled: ${isAiBgRemovalEnabled ? 'DIGITAL_BACKGROUND' : 'PHYSICAL_BACKGROUND'}`);
     }
 
     if (bgRemovalToggleBtn) {
@@ -315,7 +325,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Update Photobooth Canvas Visibility ---
     function updatePhotoboothVisibility() {
         if (!photoboothCanvas) return;
-        const shouldBeVisible = isPhotoboothActive && !isAtHomeScreen && !isShowingRegistration && !isShowingCertifications && !isCaptureModalOpen;
+        const shouldBeVisible = !isAiBgRemovalEnabled
+            ? (isPhotoboothActive && !isCaptureModalOpen)
+            : (isPhotoboothActive && !isAtHomeScreen && !isShowingRegistration && !isShowingCertifications && !isCaptureModalOpen);
         if (shouldBeVisible) {
             photoboothCanvas.classList.add('visible');
         } else {
@@ -863,7 +875,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Function to play transition video ---
     function playTransition(videoPath) {
         return new Promise(resolve => {
-            if (!videoPath) {
+            // In Physical Background Mode (parties with physical backdrop):
+            // Disable door transitions completely so the live photobooth mirror isn't obscured!
+            if (!videoPath || !isAiBgRemovalEnabled) {
                 resolve();
                 return;
             }
@@ -895,14 +909,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Home Screen: Display closed doors when nothing is active ---
     function showHomeScreen() {
-        isAtHomeScreen = true;
-        isShowingRegistration = false;
-        isShowingCertifications = false;
-        currentPlayingMedia = null;
-
         closeCaptureModal();
         closePhotoboothGalleryModal();
         closeDeleteConfirmModal();
+        currentPlayingMedia = null;
+
+        if (!isAiBgRemovalEnabled) {
+            isAtHomeScreen = false;
+            mediaDisplay.innerHTML = '';
+            if (!isPhotoboothActive) {
+                togglePhotobooth(true);
+            }
+            updatePhotoboothVisibility();
+            console.log("[v8.0] Physical Background Mode active. Live camera stream ready.");
+            return;
+        }
+
+        isAtHomeScreen = true;
+        isShowingRegistration = false;
+        isShowingCertifications = false;
         updatePhotoboothVisibility();
 
         mediaDisplay.innerHTML = '';
@@ -924,6 +949,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (controlsDiv.classList.contains('visible')) {
             controlsDiv.classList.remove('visible');
+        }
+
+        if (!isAiBgRemovalEnabled) {
+            // Physical Background Mode: Live photobooth camera remains active (no closed doors!)
+            contentIdInput.value = '';
+            mediaTitle.classList.remove('visible');
+            mediaDisplay.innerHTML = '';
+            isAtHomeScreen = false;
+            if (!isPhotoboothActive) {
+                togglePhotobooth(true);
+            }
+            updatePhotoboothVisibility();
+            return;
         }
 
         if (isAtHomeScreen) {
@@ -1534,6 +1572,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Play a media object directly (e.g. from Photobooth gallery or Developer mode)
     async function playMediaData(data, cleanId) {
+        if (!isAiBgRemovalEnabled) {
+            showToast('⚠️ Personal media disabled in Physical Background Mode');
+            return;
+        }
+
         if (isTransitioning) {
             console.warn("Transition already in progress. Ignoring input.");
             return;
@@ -1582,7 +1625,33 @@ document.addEventListener('DOMContentLoaded', () => {
         closePhotoboothGalleryModal();
 
         const cleanId = String(contentId).trim();
-        // If Enter is pressed when search bar is empty, show Photobooth Media Options!
+
+        // Physical Background Mode: Party photobooth mirror (No personal media or door transitions)
+        if (!isAiBgRemovalEnabled) {
+            contentIdInput.value = '';
+            if (!cleanId) {
+                // If Enter is pressed while empty in Physical mode, start photo snapshot countdown
+                startPhotoCountdown();
+                return;
+            }
+
+            const normalizedId = normalizeNfcTapCard(cleanId);
+            if (normalizedId) {
+                fetchNeonOneMember(normalizedId).then(member => {
+                    const memberName = member?.preferredName || member?.firstName || member?.displayName || `Member #${normalizedId}`;
+                    if (!taggedTapBands.some(b => b.cardId === normalizedId)) {
+                        taggedTapBands.push({ cardId: normalizedId, displayName: memberName });
+                    }
+                    currentPlayingMedia = { id: normalizedId, displayName: memberName };
+                    const namesList = taggedTapBands.map(b => b.displayName).join(', ');
+                    showToast(`👋 Linked: ${namesList}! Press + to snap.`);
+                    playBeep(920, 0.15, 0.8, 'triangle');
+                });
+            }
+            return;
+        }
+
+        // If Enter is pressed when search bar is empty in Digital mode, show Photobooth Media Options!
         if (!cleanId) {
             openPhotoboothPickerModal();
             return;
