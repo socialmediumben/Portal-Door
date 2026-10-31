@@ -16,6 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const webcamVideo = document.getElementById('webcamVideo');
     const bgRemovalToggleBtn = document.getElementById('bgRemovalToggleBtn');
     const hotkeyBgRemoval = document.getElementById('hotkeyBgRemoval');
+    const costumeContestToggleBtn = document.getElementById('costumeContestToggleBtn');
+    const hotkeyContest = document.getElementById('hotkeyContest');
     const scriptUrlInput = document.getElementById('scriptUrlInput');
 
     // Capture Modal Elements
@@ -29,6 +31,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const captureDirectLink = document.getElementById('captureDirectLink');
     const backdropSelectorBar = document.getElementById('backdropSelectorBar');
     const captureConfirmHint = document.getElementById('captureConfirmHint');
+    const contestActionRow = document.getElementById('contestActionRow');
+    const contestUploadBtn = document.getElementById('contestUploadBtn');
+    const contestHotkeyHint = document.getElementById('contestHotkeyHint');
     const captureInactivityBadge = document.getElementById('captureInactivityBadge');
     const captureTimerText = document.getElementById('captureTimerText');
     const captureLinkedBandsList = document.getElementById('captureLinkedBandsList');
@@ -129,6 +134,10 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.removeItem('portal_camera_fit'); // Clean up legacy camera fit mode setting
     let isAiBgRemovalEnabled = localStorage.getItem('portal_ai_bg_removal') !== 'false'; // default true, false = physical backdrop / costumes
     const cameraFitMode = 'cover'; // Always fit to fill screen vertically and horizontally
+    let isCostumeContestMode = localStorage.getItem('portal_costume_contest') === 'true';
+    let isContestPhotoSubmitted = false;
+    let lastUploadedPhotoUrl = '';
+    let lastUploadedFileId = '';
 
     // Capture State
     let isCountingDown = false;
@@ -250,6 +259,56 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hotkeyBgRemoval) {
         hotkeyBgRemoval.addEventListener('click', () => {
             toggleBgRemoval();
+        });
+    }
+
+    // --- Costume Contest Mode Management ---
+    function updateCostumeContestUI() {
+        if (costumeContestToggleBtn) {
+            if (isCostumeContestMode) {
+                costumeContestToggleBtn.textContent = '🏆 Contest: ON';
+                costumeContestToggleBtn.classList.add('contest-active');
+            } else {
+                costumeContestToggleBtn.textContent = '🏆 Contest: OFF';
+                costumeContestToggleBtn.classList.remove('contest-active');
+            }
+        }
+        if (contestActionRow) {
+            contestActionRow.style.display = (isCostumeContestMode && isCaptureModalOpen) ? 'flex' : 'none';
+        }
+        if (contestHotkeyHint) {
+            contestHotkeyHint.style.display = (isCostumeContestMode && isCaptureModalOpen) ? 'inline-block' : 'none';
+        }
+    }
+
+    function toggleCostumeContest(forcedState) {
+        if (typeof forcedState === 'boolean') {
+            isCostumeContestMode = forcedState;
+        } else {
+            isCostumeContestMode = !isCostumeContestMode;
+        }
+        localStorage.setItem('portal_costume_contest', isCostumeContestMode);
+        updateCostumeContestUI();
+        showToast(isCostumeContestMode ? '🏆 Costume Contest Mode: ON' : '🏆 Costume Contest Mode: OFF');
+        console.log(`[v7.8] Costume Contest Mode set to: ${isCostumeContestMode}`);
+    }
+
+    if (costumeContestToggleBtn) {
+        updateCostumeContestUI();
+        costumeContestToggleBtn.addEventListener('click', () => {
+            toggleCostumeContest();
+        });
+    }
+
+    if (hotkeyContest) {
+        hotkeyContest.addEventListener('click', () => {
+            toggleCostumeContest();
+        });
+    }
+
+    if (contestUploadBtn) {
+        contestUploadBtn.addEventListener('click', () => {
+            uploadPhotoToCostumeContest();
         });
     }
 
@@ -2094,7 +2153,16 @@ document.addEventListener('DOMContentLoaded', () => {
             captureCountdown.classList.remove('anim-pop');
         }
 
+        isContestPhotoSubmitted = false;
+        lastUploadedPhotoUrl = '';
+        lastUploadedFileId = '';
+        if (contestUploadBtn) {
+            contestUploadBtn.classList.remove('submitted');
+            contestUploadBtn.textContent = '🏆 Upload Photo to Contest';
+        }
+
         updatePhotoboothVisibility();
+        updateCostumeContestUI();
         resumeActiveMedia();
     }
 
@@ -2170,6 +2238,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Open Capture Modal
                 captureModal.classList.add('active');
+                updateCostumeContestUI();
                 captureQrOverlay.classList.remove('active');
                 captureSpinner.classList.remove('active');
 
@@ -2286,6 +2355,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result && (result.url || result.viewUrl)) {
                 const targetUrl = result.url || result.viewUrl;
                 const fileId = result.fileId || '';
+                lastUploadedPhotoUrl = targetUrl;
+                lastUploadedFileId = fileId;
 
                 // Collect target card IDs from tagged Tap Bands (or fallback to active media / search input)
                 let targetCardIds = taggedTapBands.map(b => b.cardId);
@@ -2319,6 +2390,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 isPhotoUploaded = true;
                 const memberCount = targetCardIds.filter(Boolean).length;
                 showToast(`🚀 Saved for ${memberCount > 0 ? memberCount : 1} member(s)! Scan QR to open in app`);
+                return targetUrl;
             } else {
                 throw new Error(result.message || "Upload did not return URL");
             }
@@ -2335,11 +2407,90 @@ document.addEventListener('DOMContentLoaded', () => {
                 showLocalDownloadFallback(imageData);
             }
             isPhotoUploaded = true;
+            return null;
         } finally {
             if (captureSpinner) {
                 captureSpinner.classList.remove('active');
             }
             isUploadingPhoto = false;
+        }
+    }
+
+    // Submit current photobooth capture to the Social Medium App Costume Contest
+    async function uploadPhotoToCostumeContest() {
+        if (isContestPhotoSubmitted) return;
+        if (!captureCanvas) return;
+
+        let photoUrl = lastUploadedPhotoUrl;
+        let fileId = lastUploadedFileId;
+
+        // If not yet uploaded to Drive, upload now
+        if (!photoUrl) {
+            if (contestUploadBtn) {
+                contestUploadBtn.textContent = '⏳ Saving photo...';
+            }
+            photoUrl = await uploadCaptureToGoogleDrive();
+            fileId = lastUploadedFileId;
+        }
+
+        if (!photoUrl) {
+            showToast('⚠️ Could not get photo URL for contest');
+            if (contestUploadBtn) {
+                contestUploadBtn.textContent = '🏆 Upload Photo to Contest';
+            }
+            return;
+        }
+
+        if (contestUploadBtn) {
+            contestUploadBtn.textContent = '⏳ Submitting to Contest...';
+        }
+
+        let targetCardIds = taggedTapBands.map(b => b.cardId);
+        if (targetCardIds.length === 0) {
+            const fallbackId = currentPlayingMedia?.id || contentIdInput.value.trim() || '';
+            if (fallbackId) targetCardIds.push(normalizeNfcTapCard(fallbackId));
+        }
+
+        let participantNames = taggedTapBands.map(b => b.displayName).filter(Boolean);
+        if (participantNames.length === 0 && currentPlayingMedia && currentPlayingMedia.displayName) {
+            participantNames.push(currentPlayingMedia.displayName);
+        }
+        if (participantNames.length === 0) {
+            participantNames.push('Costume Contestant');
+        }
+
+        try {
+            console.log('[v7.8] Submitting photo to Costume Contest:', photoUrl);
+            const res = await fetch(`${NEON_PROXY_URL}/api/costume-contest/entry`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    photoUrl: photoUrl,
+                    fileId: fileId,
+                    cardIds: targetCardIds,
+                    participantNames: participantNames,
+                    timestamp: new Date().toISOString()
+                })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                isContestPhotoSubmitted = true;
+                if (contestUploadBtn) {
+                    contestUploadBtn.classList.add('submitted');
+                    contestUploadBtn.textContent = '✅ Uploaded to Contest!';
+                }
+                showToast('🏆 Uploaded to Costume Contest! Good luck!');
+                playBeep(1200, 0.25, 0.9, 'triangle');
+            } else {
+                throw new Error(data.error || 'Server error');
+            }
+        } catch (err) {
+            console.error('[v7.8] Failed to submit to Costume Contest:', err);
+            showToast('⚠️ Contest upload failed, try again');
+            if (contestUploadBtn) {
+                contestUploadBtn.textContent = '🏆 Upload Photo to Contest';
+            }
         }
     }
 
@@ -2621,6 +2772,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Hotkey: C uploads photo to Costume Contest if contest mode is enabled
+            if (event.key === 'c' || event.key === 'C') {
+                event.preventDefault();
+                if (isCostumeContestMode) {
+                    uploadPhotoToCostumeContest();
+                }
+                return;
+            }
+
             return; // Ignore other keys while in capture modal
         }
 
@@ -2694,6 +2854,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
                 event.preventDefault();
                 toggleBgRemoval();
+                return;
+            }
+        }
+
+        // Hotkey: C toggles Costume Contest Mode
+        if (event.key === 'c' || event.key === 'C') {
+            if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
+                event.preventDefault();
+                toggleCostumeContest();
                 return;
             }
         }
@@ -2823,10 +2992,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial startup
-    console.log("Portal Door v6.1 initialized.");
+    console.log("Portal Door v7.8 initialized (Costume Contest Mode ready).");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
+    updateCostumeContestUI();
     showHomeScreen();
     loadMediaDatabase();
 
