@@ -2158,7 +2158,7 @@ document.addEventListener('DOMContentLoaded', () => {
         lastUploadedFileId = '';
         if (contestUploadBtn) {
             contestUploadBtn.classList.remove('submitted');
-            contestUploadBtn.textContent = '🏆 Upload Photo to Contest';
+            contestUploadBtn.textContent = '🏆 Upload Photo to Contest (-)';
         }
 
         updatePhotoboothVisibility();
@@ -2436,7 +2436,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!photoUrl) {
             showToast('⚠️ Could not get photo URL for contest');
             if (contestUploadBtn) {
-                contestUploadBtn.textContent = '🏆 Upload Photo to Contest';
+                contestUploadBtn.textContent = '🏆 Upload Photo to Contest (-)';
             }
             return;
         }
@@ -2460,7 +2460,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            console.log('[v7.8] Submitting photo to Costume Contest:', photoUrl);
+            console.log('[v7.9] Submitting photo to Costume Contest:', photoUrl);
             const res = await fetch(`${NEON_PROXY_URL}/api/costume-contest/entry`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2486,10 +2486,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(data.error || 'Server error');
             }
         } catch (err) {
-            console.error('[v7.8] Failed to submit to Costume Contest:', err);
+            console.error('[v7.9] Failed to submit to Costume Contest:', err);
             showToast('⚠️ Contest upload failed, try again');
             if (contestUploadBtn) {
-                contestUploadBtn.textContent = '🏆 Upload Photo to Contest';
+                contestUploadBtn.textContent = '🏆 Upload Photo to Contest (-)';
             }
         }
     }
@@ -2763,21 +2763,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Hotkey: - or C uploads photo to Costume Contest if contest mode is enabled
+            if (isCostumeContestMode && (event.key === '-' || event.code === 'NumpadSubtract' || event.code === 'Minus' || event.key === 'c' || event.key === 'C')) {
+                event.preventDefault();
+                uploadPhotoToCostumeContest();
+                return;
+            }
+
             // Hotkey: - or P toggles Background Mode (Physical Background vs Digital Background)
             if (event.key === '-' || event.code === 'NumpadSubtract' || event.code === 'Minus' || event.key === 'p' || event.key === 'P') {
                 event.preventDefault();
                 toggleBgRemoval();
                 renderBackdropSelectorPills();
                 renderCompositeCapture();
-                return;
-            }
-
-            // Hotkey: C uploads photo to Costume Contest if contest mode is enabled
-            if (event.key === 'c' || event.key === 'C') {
-                event.preventDefault();
-                if (isCostumeContestMode) {
-                    uploadPhotoToCostumeContest();
-                }
                 return;
             }
 
@@ -2992,7 +2990,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial startup
-    console.log("Portal Door v7.8 initialized (Costume Contest Mode ready).");
+    console.log("Portal Door v7.9 initialized (Costume Contest Mode ready with - hotkey).");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=7.8">
+    <link rel="stylesheet" href="static/style.css?v=7.9">
     <!-- Google MediaPipe for AI Multi-Person Background Segmentation (Groups & Solo) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -23,7 +23,7 @@
                 <button id="bgRemovalToggleBtn" class="dev-photobooth-btn" title="Toggle Physical / Digital Background (-)">🎭 Digital Background</button>
                 <button id="costumeContestToggleBtn" class="dev-photobooth-btn" title="Toggle Costume Contest Mode (C)">🏆 Contest: OFF</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v7.8</span>
+                <span class="version-badge">v7.9</span>
             </div>
         </div>
         <div class="controls-header">
@@ -139,14 +139,14 @@
                 <span><kbd>0-9</kbd> Backdrop</span>
                 <span><kbd>📡 Tap Band</kbd> Link Member(s)</span>
                 <span id="captureConfirmHint"><kbd>Enter</kbd> Save to Drive & App</span>
-                <span id="contestHotkeyHint" style="display: none;"><kbd>C</kbd> Submit to Contest</span>
+                <span id="contestHotkeyHint" style="display: none;"><kbd>-</kbd> Submit to Contest</span>
                 <span><kbd>Backspace</kbd> Close</span>
             </div>
 
             <!-- Costume Contest Submission Action (Visible when Costume Contest Mode is enabled) -->
             <div id="contestActionRow" class="contest-action-row" style="display: none;">
-                <button id="contestUploadBtn" class="contest-action-btn" title="Submit this photo to the Costume Contest (C)">
-                    🏆 Upload Photo to Contest
+                <button id="contestUploadBtn" class="contest-action-btn" title="Submit this photo to the Costume Contest (-)">
+                    🏆 Upload Photo to Contest (-)
                 </button>
             </div>
         </div>
@@ -214,6 +214,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=7.8"></script>
+    <script src="static/script.js?v=7.9"></script>
 </body>
 </html>
