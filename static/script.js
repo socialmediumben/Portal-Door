@@ -1862,15 +1862,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
             }
 
-            // Sci-Fi / Portal Watermark
-            ctx.save();
-            ctx.font = 'bold 24px Arial, sans-serif';
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-            ctx.shadowColor = 'rgba(255, 107, 0, 0.9)';
-            ctx.shadowBlur = 10;
-            ctx.textAlign = 'center';
-            ctx.fillText('PORTAL DOOR PHOTOBOOTH', width / 2, height - 35);
-            ctx.restore();
+            // Sci-Fi / Portal Watermark (omitted in Costume Contest Mode for clean contestant photos)
+            if (!isCostumeContestMode) {
+                ctx.save();
+                ctx.font = 'bold 24px Arial, sans-serif';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+                ctx.shadowColor = 'rgba(255, 107, 0, 0.9)';
+                ctx.shadowBlur = 10;
+                ctx.textAlign = 'center';
+                ctx.fillText('PORTAL DOOR PHOTOBOOTH', width / 2, height - 35);
+                ctx.restore();
+            }
             return;
         }
 
@@ -1936,15 +1938,17 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.fillStyle = radial;
             ctx.fillRect(0, 0, width, height);
 
-            // Watermark indicating theme
-            ctx.save();
-            ctx.font = 'bold 36px Arial, sans-serif';
-            ctx.fillStyle = 'rgba(255, 157, 66, 0.45)';
-            ctx.shadowColor = 'rgba(255, 107, 0, 0.8)';
-            ctx.shadowBlur = 8;
-            ctx.textAlign = 'center';
-            ctx.fillText(`PORTAL: ${backdropTitle.toUpperCase()}`, width / 2, height - 85);
-            ctx.restore();
+            // Watermark indicating theme (omitted in Costume Contest Mode)
+            if (!isCostumeContestMode) {
+                ctx.save();
+                ctx.font = 'bold 36px Arial, sans-serif';
+                ctx.fillStyle = 'rgba(255, 157, 66, 0.45)';
+                ctx.shadowColor = 'rgba(255, 107, 0, 0.8)';
+                ctx.shadowBlur = 8;
+                ctx.textAlign = 'center';
+                ctx.fillText(`PORTAL: ${backdropTitle.toUpperCase()}`, width / 2, height - 85);
+                ctx.restore();
+            }
         }
 
         // 2. Draw Person Cutout on top (respecting cameraFitMode: uncropped 1:1 or fill)
@@ -1963,15 +1967,17 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         }
 
-        // 3. Sci-Fi Portal Watermark
-        ctx.save();
-        ctx.font = 'bold 24px Arial, sans-serif';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.shadowColor = 'rgba(0, 210, 255, 0.9)';
-        ctx.shadowBlur = 10;
-        ctx.textAlign = 'center';
-        ctx.fillText('PORTAL DOOR PHOTOBOOTH', width / 2, height - 35);
-        ctx.restore();
+        // 3. Sci-Fi Portal Watermark (omitted in Costume Contest Mode for clean contestant photos)
+        if (!isCostumeContestMode) {
+            ctx.save();
+            ctx.font = 'bold 24px Arial, sans-serif';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.shadowColor = 'rgba(0, 210, 255, 0.9)';
+            ctx.shadowBlur = 10;
+            ctx.textAlign = 'center';
+            ctx.fillText('PORTAL DOOR PHOTOBOOTH', width / 2, height - 35);
+            ctx.restore();
+        }
     }
 
     // Populate backdrop pills in the selector bar
