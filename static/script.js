@@ -2961,17 +2961,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (_) {}
 
                 // Retain any members tagged prior to countdown (e.g. tapped before pressing +).
-                // Only if no members were pre-tagged, check currentPlayingMedia, lastActiveMember, or search input as fallback.
+                // Only if no members were pre-tagged, check currentPlayingMedia or lastActiveMember as fallback.
                 if (taggedTapBands.length === 0) {
                     const fallbackMember = (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop) ? currentPlayingMedia : lastActiveMember;
-                    if (fallbackMember && fallbackMember.id) {
+                    if (fallbackMember && fallbackMember.id && String(fallbackMember.id).length >= 4) {
                         const primaryCard = normalizeNfcTapCard(fallbackMember.id);
                         const primaryName = fallbackMember.displayName || fallbackMember.title?.replace("'s Portal", '') || `Member #${primaryCard}`;
                         taggedTapBands.push({ cardId: primaryCard, displayName: primaryName });
                         lastActiveMember = { id: primaryCard, displayName: primaryName };
-                    } else if (contentIdInput && contentIdInput.value.trim()) {
+                    } else if (contentIdInput && contentIdInput.value.trim().length >= 4) {
                         const primaryCard = normalizeNfcTapCard(contentIdInput.value.trim());
-                        if (primaryCard) {
+                        if (primaryCard && primaryCard.length >= 4) {
                             taggedTapBands.push({ cardId: primaryCard, displayName: `Member #${primaryCard}` });
                             lastActiveMember = { id: primaryCard, displayName: `Member #${primaryCard}` };
                         }
@@ -3096,7 +3096,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let targetCardIds = taggedTapBands.map(b => b.cardId).filter(Boolean);
             if (targetCardIds.length === 0) {
                 const fallbackId = (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '') || lastActiveMember?.id || contentIdInput.value.trim() || '';
-                if (fallbackId) targetCardIds.push(normalizeNfcTapCard(fallbackId));
+                if (fallbackId && String(fallbackId).length >= 4) targetCardIds.push(normalizeNfcTapCard(fallbackId));
             }
             if (targetCardIds.length === 0) {
                 targetCardIds.push('');
@@ -3453,8 +3453,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const timeSinceLastKey = now - lastCaptureKeyTime;
             lastCaptureKeyTime = now;
 
-            // If more than 250ms elapsed between keys, reset NFC burst buffer
-            if (timeSinceLastKey > 250) {
+            // If more than 450ms elapsed between keys, reset NFC burst buffer
+            if (timeSinceLastKey > 450) {
                 captureNfcBuffer = '';
             }
 
@@ -3510,11 +3510,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     backdropDebounceTimer = null;
                 }
 
-                if (captureNfcBuffer.length >= 4 && timeSinceLastKey < 250) {
+                if (captureNfcBuffer.length >= 4) {
                     // NFC RFID scan burst completed!
                     const scannedCard = captureNfcBuffer.trim();
                     captureNfcBuffer = '';
-                    console.log(`[v8.4] NFC Tap Band scanned in capture modal: "${scannedCard}"`);
+                    console.log(`[v8.6] NFC Tap Band scanned in capture modal: "${scannedCard}"`);
                     addTaggedTapBand(scannedCard);
                     return;
                 }

@@ -32,6 +32,20 @@ function getSpreadsheet() {
   }
 }
 
+// Helper to find the actual last row with content (ignoring empty trailing grid rows)
+function getLastContentRow(sheet) {
+  var values = sheet.getDataRange().getValues();
+  for (var r = values.length - 1; r >= 0; r--) {
+    for (var c = 0; c < values[r].length; c++) {
+      var val = values[r][c];
+      if (val !== '' && val !== null && val !== undefined) {
+        return r + 1;
+      }
+    }
+  }
+  return 1;
+}
+
 // Helper to get or automatically create the "Photobooth_Photos" sheet tab
 function getPhotoboothSheet(ss) {
   if (!ss) ss = getSpreadsheet();
@@ -234,6 +248,25 @@ function doGet(e) {
       return ContentService.createTextOutput(JSON.stringify(importResult)).setMimeType(ContentService.MimeType.JSON);
     }
 
+    // Check if cleanup action was requested to trim empty grid rows
+    if (e && e.parameter && e.parameter.action === 'cleanup') {
+      var ss = getSpreadsheet();
+      var photoSheet = getPhotoboothSheet(ss);
+      var maxRows = photoSheet.getMaxRows();
+      var lastRow = getLastContentRow(photoSheet);
+      var deletedRows = 0;
+      if (maxRows > lastRow + 20) {
+        deletedRows = maxRows - (lastRow + 20);
+        photoSheet.deleteRows(lastRow + 21, deletedRows);
+      }
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        lastRow: lastRow,
+        maxRows: photoSheet.getMaxRows(),
+        deletedRows: deletedRows
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var photos = readPhotosFromSheet();
     if (photos.length === 0) {
       photos = readPhotosFromDrive();
@@ -356,7 +389,8 @@ function doPost(e) {
 
       var ss = getSpreadsheet();
       var photoSheet = getPhotoboothSheet(ss);
-      var values = photoSheet.getDataRange().getValues();
+      // Use getDisplayValues to ensure dates are strings, never converted to JS Date objects!
+      var values = photoSheet.getDataRange().getDisplayValues();
       var updated = false;
       var updatedRowIndex = -1;
 
@@ -386,8 +420,18 @@ function doPost(e) {
 
         if (isMatch) {
           var currentVal = String(row[cardCol] || '').trim();
-          var newVal = currentVal ? (currentVal + ', ' + cardId) : cardId;
-          photoSheet.getRange(r + 1, cardCol + 1).setValue(newVal);
+          // Filter out accidental date string conversions if present
+          if (currentVal.includes('GMT') || currentVal.includes('Pacific')) {
+            currentVal = '';
+          }
+          var existingTokens = currentVal ? currentVal.split(/[,;\s]+/).map(function(t){return t.trim();}).filter(Boolean) : [];
+          if (existingTokens.indexOf(cardId) === -1) {
+            existingTokens.push(cardId);
+          }
+          var newVal = existingTokens.join(', ');
+          var cardRange = photoSheet.getRange(r + 1, cardCol + 1);
+          cardRange.setNumberFormat('@'); // Plain text format prevents auto date conversion
+          cardRange.setValue(newVal);
           photoSheet.getRange(r + 1, titleCol + 1).setValue('Portal Photo #' + newVal);
           updated = true;
           updatedRowIndex = r + 1;
@@ -395,17 +439,19 @@ function doPost(e) {
         }
       }
 
-      // If no matching existing row found, append a new row
+      // If no matching existing row found, append a new row at the actual last content row
       if (!updated) {
-        photoSheet.appendRow([
+        var targetRow = getLastContentRow(photoSheet) + 1;
+        photoSheet.getRange(targetRow, 1, 1, 6).setNumberFormat('@').setValues([[
           data.timestamp || new Date().toISOString(),
           cardId,
           'Portal Photo #' + cardId,
           'image',
           imageUrl || (fileId ? ("https://lh3.googleusercontent.com/d/" + fileId) : ''),
           fileId
-        ]);
+        ]]);
         updated = true;
+        updatedRowIndex = targetRow;
       }
 
       // Also set description on Google Drive file
@@ -413,7 +459,10 @@ function doPost(e) {
         if (fileId) {
           var driveFile = DriveApp.getFileById(fileId);
           var prevDesc = driveFile.getDescription() || '';
-          driveFile.setDescription(prevDesc ? (prevDesc + ', ' + cardId) : cardId);
+          if (prevDesc.includes('GMT') || prevDesc.includes('Pacific')) prevDesc = '';
+          var descTokens = prevDesc ? prevDesc.split(/[,;\s]+/).map(function(t){return t.trim();}).filter(Boolean) : [];
+          if (descTokens.indexOf(cardId) === -1) descTokens.push(cardId);
+          driveFile.setDescription(descTokens.join(', '));
         }
       } catch (_) {}
 
@@ -467,21 +516,20 @@ function doPost(e) {
       var ss = getSpreadsheet();
       var photoSheet = getPhotoboothSheet(ss);
 
-      // If multiple cards were tagged, log a row for each card, or one row for single/empty card
+      // Support multi-card list
       var cardsToLog = (Array.isArray(data.cardIds) && data.cardIds.length > 0) ? data.cardIds.filter(Boolean) : [cardIdTag];
-      if (cardsToLog.length === 0) cardsToLog = [''];
+      cardsToLog = cardsToLog.map(function(c){return String(c||'').trim();}).filter(Boolean);
+      var combinedCards = cardsToLog.join(', ');
 
-      cardsToLog.forEach(function(cId) {
-        var cleanCId = String(cId || '').trim();
-        photoSheet.appendRow([
-          timestampStr,
-          cleanCId,
-          cleanCId ? ('Portal Photo #' + cleanCId) : 'Portal Photo',
-          'image',
-          directUrl,
-          file.getId()
-        ]);
-      });
+      var targetRow = getLastContentRow(photoSheet) + 1;
+      photoSheet.getRange(targetRow, 1, 1, 6).setNumberFormat('@').setValues([[
+        timestampStr,
+        combinedCards,
+        combinedCards ? ('Portal Photo #' + combinedCards) : 'Portal Photo',
+        'image',
+        directUrl,
+        file.getId()
+      ]]);
     } catch (sheetLogErr) {
       Logger.log("Error logging photo to Photobooth_Photos tab: " + sheetLogErr);
     }
