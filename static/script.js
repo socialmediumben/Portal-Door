@@ -309,26 +309,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
             for (let r = 1; r < rows.length; r++) {
                 const row = rows[r];
-                const rawUrl = String(row[urlIdx] || '').trim();
+                let rawUrl = String(row[urlIdx] || '').trim();
                 if (!rawUrl || !rawUrl.startsWith('http')) continue;
 
-                const rowCard = String(row[cardIdx] || '').trim().toLowerCase();
-                const rowNorm = normalizeNfcTapCard(rowCard).toLowerCase();
-                let rowHex = '';
-                let rowDec = '';
-                if (/^\d+$/.test(rowCard)) {
-                    try { rowHex = Number(rowCard).toString(16).toLowerCase(); } catch (_) {}
-                    rowDec = rowCard;
-                } else if (/^[0-9a-fA-F]+$/.test(rowCard)) {
-                    rowHex = rowCard;
-                    try {
-                        const parsed = parseInt(rowCard, 16);
-                        if (!isNaN(parsed)) rowDec = parsed.toString();
-                    } catch (_) {}
+                let fileId = String(row[fileIdx] || '').trim();
+                const driveMatch = rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/);
+                if (driveMatch && driveMatch[1]) {
+                    if (!fileId) fileId = driveMatch[1];
+                    rawUrl = `https://lh3.googleusercontent.com/d/${driveMatch[1]}`;
                 }
 
+                const rawCardField = String(row[cardIdx] || '').trim();
+                const cardTokens = rawCardField.split(/[,;\s]+/).filter(Boolean);
+
                 if (candidateIds.size > 0) {
-                    const match = candidateIds.has(rowCard) || candidateIds.has(rowNorm) || (rowHex && candidateIds.has(rowHex)) || (rowDec && candidateIds.has(rowDec));
+                    let match = false;
+                    for (const token of cardTokens) {
+                        const tClean = token.toLowerCase();
+                        const tNorm = normalizeNfcTapCard(tClean).toLowerCase();
+                        let tHex = '';
+                        let tDec = '';
+                        if (/^\d+$/.test(tClean)) {
+                            try { tHex = Number(tClean).toString(16).toLowerCase(); } catch (_) {}
+                            tDec = tClean;
+                        } else if (/^[0-9a-fA-F]+$/.test(tClean)) {
+                            tHex = tClean;
+                            try {
+                                const parsed = parseInt(tClean, 16);
+                                if (!isNaN(parsed)) tDec = parsed.toString();
+                            } catch (_) {}
+                        }
+                        if (candidateIds.has(tClean) || candidateIds.has(tNorm) || (tHex && candidateIds.has(tHex)) || (tDec && candidateIds.has(tDec))) {
+                            match = true;
+                            break;
+                        }
+                    }
                     if (!match) continue;
                 }
 
@@ -338,11 +353,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     continue; // 30-day filter
                 }
 
-                const fileId = String(row[fileIdx] || '').trim();
                 photos.push({
                     id: fileId || ('sheet_' + r),
                     fileId: fileId,
-                    cardId: rowCard,
+                    cardId: rawCardField,
                     name: String(row[titleIdx] || 'Portal Photo').trim(),
                     url: rawUrl,
                     downloadUrl: fileId ? `https://drive.google.com/uc?export=download&id=${fileId}` : rawUrl,
@@ -1396,7 +1410,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const dateLabel = p.timestamp ? new Date(p.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Recent';
                         return `
                             <div class="profile-photo-card" data-url="${p.url}" title="Captured ${dateLabel}">
-                                <img src="${p.url}" alt="Capture" class="profile-photo-img" loading="lazy" />
+                                <img src="${p.url}" alt="Capture" class="profile-photo-img" loading="lazy" onerror="this.closest('.profile-photo-card').style.display='none';" />
                                 <span class="profile-photo-date">${dateLabel}</span>
                             </div>
                         `;
