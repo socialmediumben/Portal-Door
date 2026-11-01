@@ -2278,6 +2278,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Close the capture modal and return to portal view
     function closeCaptureModal() {
+        const wasOpen = isCaptureModalOpen || isCountingDown || isUploadingPhoto;
         isCaptureModalOpen = false;
         isCountingDown = false;
         isUploadingPhoto = false;
@@ -2285,7 +2286,9 @@ document.addEventListener('DOMContentLoaded', () => {
         clearCaptureInactivityTimer();
 
         // Unlink so next photo session never attributes to this person
-        unlinkCurrentPerson();
+        if (wasOpen) {
+            unlinkCurrentPerson();
+        }
 
         captureNfcBuffer = '';
         if (backdropDebounceTimer) {
@@ -2314,7 +2317,17 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCostumeContestUI();
 
         if (isAiBgRemovalEnabled) {
-            showHomeScreen();
+            if (wasOpen && !isAtHomeScreen) {
+                isAtHomeScreen = true;
+                isShowingRegistration = false;
+                isShowingCertifications = false;
+                updatePhotoboothVisibility();
+                mediaDisplay.innerHTML = '';
+                const img = document.createElement('img');
+                img.src = defaultClosedDoorUrl;
+                img.alt = "Portal Door Closed";
+                mediaDisplay.appendChild(img);
+            }
         } else {
             if (mediaDisplay) mediaDisplay.innerHTML = '';
         }
@@ -3189,7 +3202,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial startup
-    console.log("Portal Door v8.2 initialized (User Profile module with 30-day recent photos ready).");
+    console.log("Portal Door v8.3 initialized (Recursion guard fixed; User Profile ready).");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
