@@ -1127,8 +1127,8 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
-    // --- Render Member Achievements & Certifications Screen (triggered by '/' key) ---
-    function renderCertificationsScreen(memberData) {
+    // --- Render User Profile Module (Certifications & Recent Photos within 30 days) (triggered by '/' key) ---
+    function renderCertificationsScreen(memberData, recentPhotos = []) {
         isShowingCertifications = true;
         isShowingRegistration = false;
         updatePhotoboothVisibility();
@@ -1156,9 +1156,33 @@ document.addEventListener('DOMContentLoaded', () => {
             certsListHtml = `<div class="cert-empty">No tool certifications recorded yet in Neon One.<br>Attend an equipment safety walkthrough to get certified!</div>`;
         }
 
+        let photosHtml = '';
+        if (recentPhotos && recentPhotos.length > 0) {
+            photosHtml = `
+                <div class="profile-photos-grid">
+                    ${recentPhotos.map(p => {
+                        const dateLabel = p.timestamp ? new Date(p.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Recent';
+                        return `
+                            <div class="profile-photo-card" title="Captured ${dateLabel}">
+                                <img src="${p.url}" alt="Capture" class="profile-photo-img" loading="lazy" />
+                                <span class="profile-photo-date">${dateLabel}</span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        } else {
+            photosHtml = `
+                <div class="cert-empty profile-photos-empty">
+                    <span>📸 No photos snapped in the last 30 days.</span>
+                    <span style="font-size: 0.85em; opacity: 0.8; margin-top: 2px;">Press <kbd>+</kbd> on the keypad to snap a photobooth picture!</span>
+                </div>
+            `;
+        }
+
         mediaDisplay.innerHTML = `
             <div class="certifications-container">
-                <span class="cert-badge">MEMBER PASSPORT • NEON ONE SYNCED</span>
+                <span class="cert-badge">USER PROFILE • MEMBER PASSPORT</span>
                 <h2 class="cert-title">${displayName}</h2>
                 <div class="cert-meta-row">
                     <span class="cert-tier">${status}</span>
@@ -1168,6 +1192,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="cert-list-box">
                     ${certsListHtml}
                 </div>
+                <div class="cert-section-label">Recent Photos (Last 30 Days) (${recentPhotos.length})</div>
+                ${photosHtml}
                 <div class="cert-footer-guide">
                     <span>Press <kbd>/</kbd> to resume Media</span>
                     <span>•</span>
@@ -3047,11 +3073,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hotkey: / toggles Member Achievements / Certifications Screen
+        // Hotkey: / toggles User Profile Screen (Certifications & Recent Photos within 30 days)
         if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash') {
             event.preventDefault();
 
-            // If already viewing certifications, toggle back to playing media (if available)
+            // If already viewing profile, toggle back to playing media (if available)
             if (isShowingCertifications) {
                 isShowingCertifications = false;
                 if (currentPlayingMedia && currentPlayingMedia.file_path) {
@@ -3065,32 +3091,50 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetCardId = currentPlayingMedia?.id || contentIdInput.value.trim();
 
             if (targetCardId) {
-                if (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications) {
-                    renderCertificationsScreen(currentPlayingMedia);
-                } else {
-                    mediaDisplay.innerHTML = `
-                        <div class="certifications-container">
-                            <span class="cert-badge">NEON ONE LOOKUP</span>
-                            <h2 class="cert-title">Loading Certifications...</h2>
-                            <div class="reg-id-box">Card #${targetCardId}</div>
-                            <div class="capture-spinner" style="margin: 20px auto;"></div>
-                        </div>
-                    `;
-                    fetchNeonOneMember(targetCardId).then(member => {
-                        if (member) {
-                            renderCertificationsScreen(member);
-                        } else {
-                            renderCertificationsScreen({
-                                id: targetCardId,
-                                displayName: 'Member',
-                                certifications: [],
-                                membershipStatus: 'Unregistered Key'
-                            });
-                        }
+                mediaDisplay.innerHTML = `
+                    <div class="certifications-container">
+                        <span class="cert-badge">USER PROFILE</span>
+                        <h2 class="cert-title">Loading User Profile...</h2>
+                        <div class="reg-id-box">Card #${targetCardId}</div>
+                        <div class="capture-spinner" style="margin: 20px auto;"></div>
+                    </div>
+                `;
+
+                const memberPromise = (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications)
+                    ? Promise.resolve(currentPlayingMedia)
+                    : fetchNeonOneMember(targetCardId);
+
+                const photosPromise = fetch(`${NEON_PROXY_URL}/api/portal-photos?cardId=${encodeURIComponent(targetCardId)}`)
+                    .then(r => r.json())
+                    .catch(() => ({ photos: [] }));
+
+                Promise.all([memberPromise, photosPromise]).then(([member, photosRes]) => {
+                    const memberData = member || (currentPlayingMedia && currentPlayingMedia.id === targetCardId ? currentPlayingMedia : {
+                        id: targetCardId,
+                        displayName: 'Member',
+                        certifications: [],
+                        membershipStatus: 'Active Member'
                     });
-                }
+                    const allPhotos = Array.isArray(photosRes?.photos) ? photosRes.photos : [];
+                    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+                    const now = Date.now();
+                    const recentPhotos = allPhotos.filter(p => {
+                        if (!p.timestamp) return true;
+                        const t = new Date(p.timestamp).getTime();
+                        return !isNaN(t) && (now - t <= THIRTY_DAYS_MS);
+                    });
+                    renderCertificationsScreen(memberData, recentPhotos);
+                }).catch(err => {
+                    console.error("[User Profile] Error loading profile:", err);
+                    renderCertificationsScreen({
+                        id: targetCardId,
+                        displayName: 'Member',
+                        certifications: [],
+                        membershipStatus: 'Active Member'
+                    }, []);
+                });
             } else {
-                mediaTitle.textContent = "Scan a Tap Card to view certifications";
+                mediaTitle.textContent = "Scan a Tap Card to view User Profile";
                 mediaTitle.classList.add('visible');
                 setTimeout(() => mediaTitle.classList.remove('visible'), 2500);
             }
@@ -3145,7 +3189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial startup
-    console.log("Portal Door v8.1 initialized (Automatic unlinking after save/cancel ready).");
+    console.log("Portal Door v8.2 initialized (User Profile module with 30-day recent photos ready).");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
