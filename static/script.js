@@ -257,6 +257,106 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Fetch photos directly from Google Sheet "Photobooth_Photos" tab (permanent 24/7 database)
+    async function fetchPhotoboothPhotosFromSheet(cardId) {
+        try {
+            const res = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Photobooth_Photos&t=${Date.now()}`);
+            if (!res.ok) return [];
+            const text = await res.text();
+            const rows = parseCSV(text);
+            if (!rows || rows.length < 2) return [];
+
+            // Detect column indices
+            let timeIdx = 0, cardIdx = 1, titleIdx = 2, urlIdx = 4, fileIdx = 5;
+            let isPhotoboothSheet = false;
+            for (let i = 0; i < rows[0].length; i++) {
+                const norm = String(rows[0][i] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (norm.includes('time') || norm.includes('date')) timeIdx = i;
+                else if (norm.includes('card') || norm === 'id') cardIdx = i;
+                else if (norm.includes('title') || norm.includes('name')) titleIdx = i;
+                else if (norm.includes('url') || norm.includes('image') || norm.includes('link')) {
+                    urlIdx = i;
+                    isPhotoboothSheet = true;
+                } else if (norm.includes('file')) {
+                    fileIdx = i;
+                    isPhotoboothSheet = true;
+                }
+            }
+
+            if (!isPhotoboothSheet && !rows[0].some(h => String(h).toLowerCase().includes('card'))) {
+                return [];
+            }
+
+            const candidateIds = new Set();
+            if (cardId) {
+                const clean = String(cardId).trim().toLowerCase();
+                candidateIds.add(clean);
+                const norm = normalizeNfcTapCard(clean).toLowerCase();
+                if (norm) candidateIds.add(norm);
+                if (/^\d+$/.test(clean)) {
+                    try { candidateIds.add(Number(clean).toString(16).toLowerCase()); } catch (_) {}
+                } else if (/^[0-9a-fA-F]+$/.test(clean)) {
+                    try {
+                        const parsed = parseInt(clean, 16);
+                        if (!isNaN(parsed)) candidateIds.add(parsed.toString());
+                    } catch (_) {}
+                }
+            }
+
+            const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+            const now = Date.now();
+            const photos = [];
+
+            for (let r = 1; r < rows.length; r++) {
+                const row = rows[r];
+                const rawUrl = String(row[urlIdx] || '').trim();
+                if (!rawUrl || !rawUrl.startsWith('http')) continue;
+
+                const rowCard = String(row[cardIdx] || '').trim().toLowerCase();
+                const rowNorm = normalizeNfcTapCard(rowCard).toLowerCase();
+                let rowHex = '';
+                let rowDec = '';
+                if (/^\d+$/.test(rowCard)) {
+                    try { rowHex = Number(rowCard).toString(16).toLowerCase(); } catch (_) {}
+                    rowDec = rowCard;
+                } else if (/^[0-9a-fA-F]+$/.test(rowCard)) {
+                    rowHex = rowCard;
+                    try {
+                        const parsed = parseInt(rowCard, 16);
+                        if (!isNaN(parsed)) rowDec = parsed.toString();
+                    } catch (_) {}
+                }
+
+                if (candidateIds.size > 0) {
+                    const match = candidateIds.has(rowCard) || candidateIds.has(rowNorm) || (rowHex && candidateIds.has(rowHex)) || (rowDec && candidateIds.has(rowDec));
+                    if (!match) continue;
+                }
+
+                const rawTime = row[timeIdx];
+                const timeMs = rawTime ? new Date(rawTime).getTime() : now;
+                if (!isNaN(timeMs) && (now - timeMs > THIRTY_DAYS_MS)) {
+                    continue; // 30-day filter
+                }
+
+                const fileId = String(row[fileIdx] || '').trim();
+                photos.push({
+                    id: fileId || ('sheet_' + r),
+                    fileId: fileId,
+                    cardId: rowCard,
+                    name: String(row[titleIdx] || 'Portal Photo').trim(),
+                    url: rawUrl,
+                    downloadUrl: fileId ? `https://drive.google.com/uc?export=download&id=${fileId}` : rawUrl,
+                    timestamp: !isNaN(timeMs) ? new Date(timeMs).toISOString() : new Date().toISOString()
+                });
+            }
+
+            return photos;
+        } catch (err) {
+            console.warn("[Photobooth] Could not fetch photos directly from Google Sheet:", err);
+            return [];
+        }
+    }
+
     // Capture State
     let isCountingDown = false;
     let isCaptureModalOpen = false;
@@ -972,6 +1072,21 @@ document.addEventListener('DOMContentLoaded', () => {
             console.warn("[v5.6] Could not load 'Photobooth' tab:", pbErr);
         }
 
+        // 4. Fetch Photobooth Photos Central Cloud Database
+        try {
+            console.log("[v8.5] Fetching 'Photobooth_Photos' permanent database tab from Google Sheets...");
+            const sheetPhotos = await fetchPhotoboothPhotosFromSheet();
+            if (sheetPhotos.length > 0) {
+                console.log(`[v8.5] Loaded ${sheetPhotos.length} recent photos from Photobooth_Photos cloud database.`);
+                const existing = getLocalPhotosForCard('');
+                const mergedMap = new Map();
+                [...sheetPhotos, ...existing].forEach(p => { if (p && p.url) mergedMap.set(p.url, p); });
+                localStorage.setItem('portal_recent_photos', JSON.stringify(Array.from(mergedMap.values())));
+            }
+        } catch (pbPhotosErr) {
+            console.warn("[v8.5] Could not load 'Photobooth_Photos' tab:", pbPhotosErr);
+        }
+
         // Fallback to local media_data.json if both tabs failed
         if (!devLoaded && !userLoaded) {
             try {
@@ -1371,6 +1486,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 : fetchNeonOneMember(targetCardId);
 
             const fetchPhotosWithFallback = async () => {
+                const map = new Map();
+
+                // 1. Fetch from Google Sheet permanent cloud storage (guaranteed 24/7)
+                try {
+                    const sheetPhotos = await fetchPhotoboothPhotosFromSheet(targetCardId);
+                    sheetPhotos.forEach(p => { if (p && p.url) map.set(p.url, p); });
+                } catch (_) {}
+
+                // 2. Fetch from Render proxy / in-memory cache
                 try {
                     let res = await fetch(`${NEON_PROXY_URL}/api/portal-photos?cardId=${encodeURIComponent(targetCardId)}`).then(r => r.json()).catch(() => null);
                     let photos = Array.isArray(res?.photos) ? res.photos : [];
@@ -1390,10 +1514,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             photos = res.photos;
                         }
                     }
-                    return photos;
-                } catch (_) {
-                    return [];
-                }
+                    photos.forEach(p => { if (p && p.url && !map.has(p.url)) map.set(p.url, p); });
+                } catch (_) {}
+
+                return Array.from(map.values());
             };
 
             Promise.all([memberPromise, fetchPhotosWithFallback()]).then(([member, apiPhotos]) => {
@@ -2894,7 +3018,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            console.log("[v5.3] Uploading photo to Google Drive via Apps Script...");
+            // Collect target card IDs from tagged Tap Bands (or fallback to active media / search input / lastActiveMember)
+            let targetCardIds = taggedTapBands.map(b => b.cardId).filter(Boolean);
+            if (targetCardIds.length === 0) {
+                const fallbackId = (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '') || lastActiveMember?.id || contentIdInput.value.trim() || '';
+                if (fallbackId) targetCardIds.push(normalizeNfcTapCard(fallbackId));
+            }
+            if (targetCardIds.length === 0) {
+                targetCardIds.push('');
+            }
+            const primaryCardId = targetCardIds.find(Boolean) || '';
+
+            console.log(`[v8.5] Uploading photo to Google Drive & Google Sheet (linked cards: ${targetCardIds.join(', ')})...`);
 
             // 3. POST image data to Google Apps Script Web App
             const response = await fetch(driveScriptUrl, {
@@ -2902,6 +3037,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'text/plain' }, // Avoid CORS preflight on Apps Script
                 body: JSON.stringify({
                     image: imageData,
+                    cardId: primaryCardId,
+                    cardIds: targetCardIds,
                     timestamp: new Date().toISOString()
                 })
             });
@@ -2915,17 +3052,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 lastUploadedPhotoUrl = targetUrl;
                 lastUploadedFileId = fileId;
 
-                // Collect target card IDs from tagged Tap Bands (or fallback to active media / search input / lastActiveMember)
-                let targetCardIds = taggedTapBands.map(b => b.cardId).filter(Boolean);
-                if (targetCardIds.length === 0) {
-                    const fallbackId = (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '') || lastActiveMember?.id || contentIdInput.value.trim() || '';
-                    if (fallbackId) targetCardIds.push(normalizeNfcTapCard(fallbackId));
-                }
-                if (targetCardIds.length === 0) {
-                    targetCardIds.push('');
-                }
-
-                console.log(`[v8.4] Syncing capture photo to ${targetCardIds.length} linked member(s):`, targetCardIds);
+                console.log(`[v8.5] Syncing capture photo to ${targetCardIds.length} linked member(s):`, targetCardIds);
 
                 // Sync photo to Social Medium App backend proxy & localStorage history for EACH tagged Tap Band
                 targetCardIds.forEach(cardId => {
