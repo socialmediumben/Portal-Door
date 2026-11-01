@@ -181,25 +181,76 @@ document.addEventListener('DOMContentLoaded', () => {
     // Retrieve local photo history for a card (or all session photos if cardId is empty)
     function getLocalPhotosForCard(cardId) {
         try {
-            const cleanCard = cardId ? String(cardId).trim().toLowerCase() : '';
             const raw = localStorage.getItem('portal_recent_photos');
             const all = raw ? JSON.parse(raw) : [];
-            if (!Array.isArray(all)) return [];
+            const safeAll = Array.isArray(all) ? all : [];
 
+            const cleanCard = cardId ? String(cardId).trim().toLowerCase() : '';
             if (!cleanCard) {
-                return all;
+                return safeAll;
             }
 
-            const mRaw = localStorage.getItem(`sm_portal_photos_${cleanCard}`) || localStorage.getItem(`portal_photos_${cleanCard}`);
-            const mList = mRaw ? JSON.parse(mRaw) : [];
-            const matchedAll = all.filter(p => String(p.cardId || '').trim().toLowerCase() === cleanCard);
+            const candidateIds = new Set();
+            candidateIds.add(cleanCard);
+            const norm = normalizeNfcTapCard(cleanCard).toLowerCase();
+            if (norm) candidateIds.add(norm);
+            if (/^\d+$/.test(cleanCard)) {
+                try { candidateIds.add(Number(cleanCard).toString(16).toLowerCase()); } catch (_) {}
+            } else if (/^[0-9a-fA-F]+$/.test(cleanCard)) {
+                try {
+                    const parsed = parseInt(cleanCard, 16);
+                    if (!isNaN(parsed)) candidateIds.add(parsed.toString());
+                } catch (_) {}
+            }
 
             const map = new Map();
-            [...mList, ...matchedAll].forEach(p => {
-                if (p && p.url && !map.has(p.url)) {
-                    map.set(p.url, p);
+
+            // Check candidate localStorage keys
+            candidateIds.forEach(k => {
+                const mRaw = localStorage.getItem(`sm_portal_photos_${k}`) || localStorage.getItem(`portal_photos_${k}`);
+                if (mRaw) {
+                    try {
+                        const mList = JSON.parse(mRaw);
+                        if (Array.isArray(mList)) {
+                            mList.forEach(p => { if (p && p.url) map.set(p.url, p); });
+                        }
+                    } catch (_) {}
                 }
             });
+
+            // Match from global recent photos
+            safeAll.forEach(p => {
+                const pRaw = String(p.cardId || '').trim().toLowerCase();
+                const pNorm = normalizeNfcTapCard(pRaw).toLowerCase();
+                let pHex = '';
+                let pDec = '';
+                if (/^\d+$/.test(pRaw)) {
+                    try { pHex = Number(pRaw).toString(16).toLowerCase(); } catch (_) {}
+                    pDec = pRaw;
+                } else if (/^[0-9a-fA-F]+$/.test(pRaw)) {
+                    pHex = pRaw;
+                    try {
+                        const parsed = parseInt(pRaw, 16);
+                        if (!isNaN(parsed)) pDec = parsed.toString();
+                    } catch (_) {}
+                }
+
+                if (!pRaw || candidateIds.has(pRaw) || candidateIds.has(pNorm) || (pHex && candidateIds.has(pHex)) || (pDec && candidateIds.has(pDec))) {
+                    if (p && p.url && !map.has(p.url)) {
+                        map.set(p.url, p);
+                    }
+                }
+            });
+
+            // If still no photos matched specifically for this card, include recent session captures
+            if (map.size === 0 && safeAll.length > 0) {
+                safeAll.forEach(p => {
+                    if (p && p.url && !map.has(p.url)) {
+                        map.set(p.url, p);
+                    }
+                });
+            }
+
             return Array.from(map.values());
         } catch (e) {
             return [];
@@ -1319,11 +1370,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? Promise.resolve(currentPlayingMedia)
                 : fetchNeonOneMember(targetCardId);
 
-            const photosPromise = fetch(`${NEON_PROXY_URL}/api/portal-photos?cardId=${encodeURIComponent(targetCardId)}`)
-                .then(r => r.json())
-                .catch(() => ({ photos: [] }));
+            const fetchPhotosWithFallback = async () => {
+                try {
+                    let res = await fetch(`${NEON_PROXY_URL}/api/portal-photos?cardId=${encodeURIComponent(targetCardId)}`).then(r => r.json()).catch(() => null);
+                    let photos = Array.isArray(res?.photos) ? res.photos : [];
+                    if (photos.length === 0) {
+                        const norm = normalizeNfcTapCard(targetCardId);
+                        if (norm && norm !== targetCardId) {
+                            res = await fetch(`${NEON_PROXY_URL}/api/portal-photos?cardId=${encodeURIComponent(norm)}`).then(r => r.json()).catch(() => null);
+                            if (Array.isArray(res?.photos) && res.photos.length > 0) {
+                                photos = res.photos;
+                            }
+                        }
+                    }
+                    if (photos.length === 0 && /^\d+$/.test(targetCardId)) {
+                        const hex = Number(targetCardId).toString(16);
+                        res = await fetch(`${NEON_PROXY_URL}/api/portal-photos?cardId=${encodeURIComponent(hex)}`).then(r => r.json()).catch(() => null);
+                        if (Array.isArray(res?.photos) && res.photos.length > 0) {
+                            photos = res.photos;
+                        }
+                    }
+                    return photos;
+                } catch (_) {
+                    return [];
+                }
+            };
 
-            Promise.all([memberPromise, photosPromise]).then(([member, photosRes]) => {
+            Promise.all([memberPromise, fetchPhotosWithFallback()]).then(([member, apiPhotos]) => {
                 const memberData = member || (currentPlayingMedia && currentPlayingMedia.id === targetCardId ? currentPlayingMedia : {
                     id: targetCardId,
                     displayName: lastActiveMember?.displayName || `Member #${targetCardId}`,
@@ -1332,7 +1405,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 // Combine backend photos with local cached photos and session captures
-                const apiPhotos = Array.isArray(photosRes?.photos) ? photosRes.photos : [];
                 const localPhotos = getLocalPhotosForCard(targetCardId);
 
                 // Deduplicate photos by url / fileId

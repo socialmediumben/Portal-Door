@@ -28,6 +28,44 @@ function testAuthorization() {
   Logger.log("Authorization Successful! Connected to Sheet: " + ss.getName());
 }
 
+// GET handler: Returns all photos in the "Portal Photos" Google Drive folder as JSON
+function doGet(e) {
+  try {
+    var folders = DriveApp.getFoldersByName('Portal Photos');
+    if (!folders.hasNext()) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success', photos: [] })).setMimeType(ContentService.MimeType.JSON);
+    }
+    var folder = folders.next();
+    var files = folder.getFiles();
+    var photos = [];
+    while (files.hasNext()) {
+      var f = files.next();
+      photos.push({
+        id: f.getId(),
+        fileId: f.getId(),
+        name: f.getName(),
+        cardId: f.getDescription() || '',
+        url: "https://lh3.googleusercontent.com/d/" + f.getId(),
+        downloadUrl: "https://drive.google.com/uc?export=download&id=" + f.getId(),
+        timestamp: f.getDateCreated().toISOString()
+      });
+    }
+    photos.sort(function(a, b) {
+      return new Date(b.timestamp) - new Date(a.timestamp);
+    });
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success',
+      count: photos.length,
+      photos: photos
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'error',
+      message: err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
@@ -94,16 +132,60 @@ function doPost(e) {
     }
 
     // ==========================================
-    // ACTION 2: UPLOAD PHOTOBOOTH PHOTO TO DRIVE
+    // ACTION 2: LIST ALL PHOTOS FROM DRIVE FOLDER
     // ==========================================
+    if (data.action === 'list' || data.action === 'get_photos') {
+      var folders = DriveApp.getFoldersByName('Portal Photos');
+      if (!folders.hasNext()) {
+        return ContentService.createTextOutput(JSON.stringify({ status: 'success', photos: [] })).setMimeType(ContentService.MimeType.JSON);
+      }
+      var folder = folders.next();
+      var files = folder.getFiles();
+      var photos = [];
+      while (files.hasNext()) {
+        var f = files.next();
+        photos.push({
+          id: f.getId(),
+          fileId: f.getId(),
+          name: f.getName(),
+          cardId: f.getDescription() || '',
+          url: "https://lh3.googleusercontent.com/d/" + f.getId(),
+          downloadUrl: "https://drive.google.com/uc?export=download&id=" + f.getId(),
+          timestamp: f.getDateCreated().toISOString()
+        });
+      }
+      photos.sort(function(a, b) {
+        return new Date(b.timestamp) - new Date(a.timestamp);
+      });
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        count: photos.length,
+        photos: photos
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ==========================================
+    // ACTION 3: UPLOAD PHOTOBOOTH PHOTO TO DRIVE
+    // ==========================================
+    if (!data.image) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        message: 'No image data provided.'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    var cardIdTag = data.cardId ? String(data.cardId).trim() : '';
     var base64Data = data.image.replace(/^data:image\/(png|jpeg);base64,/, "");
     var imageBytes = Utilities.base64Decode(base64Data);
-    var blob = Utilities.newBlob(imageBytes, 'image/jpeg', 'Portal_Photo_' + new Date().getTime() + '.jpg');
+    var fileName = cardIdTag ? ('Portal_Photo_' + cardIdTag + '_' + new Date().getTime() + '.jpg') : ('Portal_Photo_' + new Date().getTime() + '.jpg');
+    var blob = Utilities.newBlob(imageBytes, 'image/jpeg', fileName);
     
     // Automatically creates or uses a "Portal Photos" folder in Google Drive
     var folders = DriveApp.getFoldersByName('Portal Photos');
     var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('Portal Photos');
     var file = folder.createFile(blob);
+    if (cardIdTag) {
+      file.setDescription(cardIdTag);
+    }
     
     // Allow anyone with the link to view the image
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
@@ -113,7 +195,8 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
       url: directUrl,
-      fileId: file.getId()
+      fileId: file.getId(),
+      cardId: cardIdTag
     })).setMimeType(ContentService.MimeType.JSON);
 
   } catch(err) {
