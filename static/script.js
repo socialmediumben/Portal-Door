@@ -2054,9 +2054,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const cleanId = String(contentId).trim();
         const normalizedId = cleanId ? normalizeNfcTapCard(cleanId) : '';
 
+        // Register attendee identity synchronously so taking a photo immediately attributes to this card
+        if (normalizedId) {
+            lastActiveMember = { id: normalizedId, displayName: `Member #${normalizedId}` };
+            if (!taggedTapBands.some(b => b.cardId === normalizedId)) {
+                taggedTapBands.push({ cardId: normalizedId, displayName: `Member #${normalizedId}` });
+            }
+        }
+
         // If currently viewing User Profile, scanning a card immediately opens that member's profile!
         if (cleanId && isShowingCertifications) {
-            lastActiveMember = { id: normalizedId, displayName: `Member #${normalizedId}` };
             openUserProfileScreen(normalizedId);
             return;
         }
@@ -2108,6 +2115,25 @@ document.addEventListener('DOMContentLoaded', () => {
                                         timestamp: new Date().toISOString()
                                     })
                                 }).catch(e => console.warn(`[v8.4] Error syncing photo to proxy for card ${normalizedId}:`, e));
+                            } catch (_) {}
+                        }
+
+                        // Sync to Google Sheet Photobooth_Photos tab
+                        if (driveScriptUrl && (lastUploadedFileId || lastUploadedPhotoUrl)) {
+                            try {
+                                fetch(driveScriptUrl, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'text/plain' },
+                                    body: JSON.stringify({
+                                        action: 'link_card',
+                                        cardId: normalizedId,
+                                        fileId: lastUploadedFileId || '',
+                                        url: lastUploadedPhotoUrl || '',
+                                        timestamp: new Date().toISOString()
+                                    })
+                                }).then(r => r.json()).then(res => {
+                                    console.log(`[v8.5] Linked card "${normalizedId}" in Google Sheet (physical mode):`, res);
+                                }).catch(err => console.warn(`[v8.5] Google Sheet physical mode link warning:`, err));
                             } catch (_) {}
                         }
                     }
@@ -2701,6 +2727,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         }).catch(e => console.warn(`[v8.4] Error syncing photo to proxy for card ${normalized}:`, e));
                     } catch (_) {}
                 }
+
+                // 🌟 IMMEDIATELY SYNC CARD LINK TO GOOGLE APPS SCRIPT / GOOGLE SHEET! 🌟
+                if (driveScriptUrl && (lastUploadedFileId || lastUploadedPhotoUrl)) {
+                    try {
+                        fetch(driveScriptUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/plain' },
+                            body: JSON.stringify({
+                                action: 'link_card',
+                                cardId: normalized,
+                                fileId: lastUploadedFileId || '',
+                                url: lastUploadedPhotoUrl || '',
+                                timestamp: new Date().toISOString()
+                            })
+                        }).then(r => r.json()).then(res => {
+                            console.log(`[v8.5] Linked card "${normalized}" to photo in Google Sheet:`, res);
+                        }).catch(err => console.warn(`[v8.5] Error updating card in Google Sheet:`, err));
+                    } catch (_) {}
+                }
             }
         } catch (err) {
             console.warn("[v6.7] Error resolving member name for Tap Band:", err);
@@ -2916,7 +2961,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (_) {}
 
                 // Retain any members tagged prior to countdown (e.g. tapped before pressing +).
-                // Only if no members were pre-tagged, check currentPlayingMedia or lastActiveMember as fallback.
+                // Only if no members were pre-tagged, check currentPlayingMedia, lastActiveMember, or search input as fallback.
                 if (taggedTapBands.length === 0) {
                     const fallbackMember = (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop) ? currentPlayingMedia : lastActiveMember;
                     if (fallbackMember && fallbackMember.id) {
@@ -2924,6 +2969,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const primaryName = fallbackMember.displayName || fallbackMember.title?.replace("'s Portal", '') || `Member #${primaryCard}`;
                         taggedTapBands.push({ cardId: primaryCard, displayName: primaryName });
                         lastActiveMember = { id: primaryCard, displayName: primaryName };
+                    } else if (contentIdInput && contentIdInput.value.trim()) {
+                        const primaryCard = normalizeNfcTapCard(contentIdInput.value.trim());
+                        if (primaryCard) {
+                            taggedTapBands.push({ cardId: primaryCard, displayName: `Member #${primaryCard}` });
+                            lastActiveMember = { id: primaryCard, displayName: `Member #${primaryCard}` };
+                        }
                     }
                 }
                 renderTaggedTapBandsUI();
@@ -2945,8 +2996,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     captureSaveBtn.disabled = true;
                 }
 
-                // Automatically trigger background upload to Google Drive and proxy!
-                uploadCaptureToGoogleDrive();
+                // If member card is already tagged, upload immediately; otherwise allow 2.5s for instant tap before auto-upload
+                if (autoSaveDebounceTimer) clearTimeout(autoSaveDebounceTimer);
+                if (taggedTapBands.some(b => b.cardId)) {
+                    uploadCaptureToGoogleDrive();
+                } else {
+                    autoSaveDebounceTimer = setTimeout(() => {
+                        if (isCaptureModalOpen && !isUploadingPhoto && !isPhotoUploaded) {
+                            uploadCaptureToGoogleDrive();
+                        }
+                    }, 2500);
+                }
 
                 // Start 90-second inactivity timeout
                 startCaptureInactivityTimer();
@@ -3464,6 +3524,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!isPhotoUploaded && !isUploadingPhoto) {
                     uploadCaptureToGoogleDrive();
                 } else if (lastUploadedPhotoUrl) {
+                    const cards = taggedTapBands.map(b => b.cardId).filter(Boolean);
+                    if (cards.length > 0 && driveScriptUrl) {
+                        cards.forEach(cId => {
+                            fetch(driveScriptUrl, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'text/plain' },
+                                body: JSON.stringify({
+                                    action: 'link_card',
+                                    cardId: cId,
+                                    fileId: lastUploadedFileId || '',
+                                    url: lastUploadedPhotoUrl,
+                                    timestamp: new Date().toISOString()
+                                })
+                            }).catch(() => {});
+                        });
+                    }
                     showQrCodeForPhoto(lastUploadedPhotoUrl, taggedTapBands.map(b => b.cardId));
                 }
                 return;
@@ -3696,6 +3772,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!isPhotoUploaded && !isUploadingPhoto) {
                 uploadCaptureToGoogleDrive();
             } else if (lastUploadedPhotoUrl) {
+                const cards = taggedTapBands.map(b => b.cardId).filter(Boolean);
+                if (cards.length > 0 && driveScriptUrl) {
+                    cards.forEach(cId => {
+                        fetch(driveScriptUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/plain' },
+                            body: JSON.stringify({
+                                action: 'link_card',
+                                cardId: cId,
+                                fileId: lastUploadedFileId || '',
+                                url: lastUploadedPhotoUrl,
+                                timestamp: new Date().toISOString()
+                            })
+                        }).catch(() => {});
+                    });
+                }
                 showQrCodeForPhoto(lastUploadedPhotoUrl, taggedTapBands.map(b => b.cardId));
             }
         });

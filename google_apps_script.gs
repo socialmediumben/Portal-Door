@@ -234,6 +234,93 @@ function doPost(e) {
     }
 
     // ==========================================
+    // ACTION 4: LINK / UPDATE CARD_ID IN SPREADSHEET
+    // ==========================================
+    if (data.action === 'link_card' || data.action === 'update_card') {
+      var cardId = String(data.cardId || data.card_id || '').trim();
+      var fileId = String(data.fileId || data.file_id || '').trim();
+      var imageUrl = String(data.url || data.image_url || '').trim();
+
+      if (!cardId) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          message: 'No cardId provided for linking.'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      var ss = getSpreadsheet();
+      var photoSheet = getPhotoboothSheet(ss);
+      var values = photoSheet.getDataRange().getValues();
+      var updated = false;
+      var updatedRowIndex = -1;
+
+      // Locate column indices from header
+      var cardCol = 1, titleCol = 2, urlCol = 4, fileCol = 5;
+      if (values.length > 0) {
+        var hRow = values[0];
+        for (var c = 0; c < hRow.length; c++) {
+          var hName = String(hRow[c]).toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (hName.includes('card') || hName === 'id') cardCol = c;
+          else if (hName.includes('title') || hName.includes('name')) titleCol = c;
+          else if (hName.includes('url') || hName.includes('link') || hName.includes('image')) urlCol = c;
+          else if (hName.includes('file')) fileCol = c;
+        }
+      }
+
+      // Search bottom to top for matching row (by fileId, imageUrl, or most recent row with blank cardId)
+      for (var r = values.length - 1; r >= 1; r--) {
+        var row = values[r];
+        var rFile = String(row[fileCol] || '').trim();
+        var rUrl = String(row[urlCol] || '').trim();
+
+        var isMatch = false;
+        if (fileId && rFile === fileId) isMatch = true;
+        else if (imageUrl && (rUrl === imageUrl || rUrl.includes(fileId))) isMatch = true;
+        else if (!fileId && !imageUrl && !String(row[cardCol] || '').trim()) isMatch = true;
+
+        if (isMatch) {
+          var currentVal = String(row[cardCol] || '').trim();
+          var newVal = currentVal ? (currentVal + ', ' + cardId) : cardId;
+          photoSheet.getRange(r + 1, cardCol + 1).setValue(newVal);
+          photoSheet.getRange(r + 1, titleCol + 1).setValue('Portal Photo #' + newVal);
+          updated = true;
+          updatedRowIndex = r + 1;
+          break;
+        }
+      }
+
+      // If no matching existing row found, append a new row
+      if (!updated) {
+        photoSheet.appendRow([
+          data.timestamp || new Date().toISOString(),
+          cardId,
+          'Portal Photo #' + cardId,
+          'image',
+          imageUrl || (fileId ? ("https://lh3.googleusercontent.com/d/" + fileId) : ''),
+          fileId
+        ]);
+        updated = true;
+      }
+
+      // Also set description on Google Drive file
+      try {
+        if (fileId) {
+          var driveFile = DriveApp.getFileById(fileId);
+          var prevDesc = driveFile.getDescription() || '';
+          driveFile.setDescription(prevDesc ? (prevDesc + ', ' + cardId) : cardId);
+        }
+      } catch (_) {}
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        updated: updated,
+        rowIndex: updatedRowIndex,
+        cardId: cardId,
+        fileId: fileId
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ==========================================
     // ACTION 3: UPLOAD PHOTOBOOTH PHOTO TO DRIVE & LOG TO GOOGLE SHEET
     // ==========================================
     if (!data.image) {
