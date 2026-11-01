@@ -139,6 +139,72 @@ document.addEventListener('DOMContentLoaded', () => {
     let isContestPhotoSubmitted = false;
     let lastUploadedPhotoUrl = '';
     let lastUploadedFileId = '';
+    let lastActiveMember = null; // { id: string, displayName: string }
+    let lastCapturedDataUrl = null; // In-memory dataUrl of the most recent capture
+    let autoSaveDebounceTimer = null;
+    const captureSaveBtn = document.getElementById('captureSaveBtn');
+    const captureProfileBtn = document.getElementById('captureProfileBtn');
+
+    // Save photo record to localStorage history
+    function savePhotoToLocalHistory(photoRecord) {
+        if (!photoRecord || !photoRecord.url) return;
+        try {
+            const raw = localStorage.getItem('portal_recent_photos');
+            let list = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(list)) list = [];
+            // Remove duplicates by url or fileId
+            list = list.filter(p => p.url !== photoRecord.url && (photoRecord.fileId ? p.fileId !== photoRecord.fileId : true));
+            list.unshift(photoRecord);
+            if (list.length > 80) list.splice(80);
+            localStorage.setItem('portal_recent_photos', JSON.stringify(list));
+
+            // Also save under specific cardId if present
+            const cleanCard = photoRecord.cardId ? String(photoRecord.cardId).trim().toLowerCase() : '';
+            if (cleanCard) {
+                const memberKey = `sm_portal_photos_${cleanCard}`;
+                const mRaw = localStorage.getItem(memberKey);
+                let mList = mRaw ? JSON.parse(mRaw) : [];
+                if (!Array.isArray(mList)) mList = [];
+                mList = mList.filter(p => p.url !== photoRecord.url && (photoRecord.fileId ? p.fileId !== photoRecord.fileId : true));
+                mList.unshift(photoRecord);
+                if (mList.length > 50) mList.splice(50);
+                localStorage.setItem(memberKey, JSON.stringify(mList));
+
+                // Mirror for portal_photos_ key as well
+                localStorage.setItem(`portal_photos_${cleanCard}`, JSON.stringify(mList));
+            }
+        } catch (e) {
+            console.warn("[Local History] Error saving photo to localStorage:", e);
+        }
+    }
+
+    // Retrieve local photo history for a card (or all session photos if cardId is empty)
+    function getLocalPhotosForCard(cardId) {
+        try {
+            const cleanCard = cardId ? String(cardId).trim().toLowerCase() : '';
+            const raw = localStorage.getItem('portal_recent_photos');
+            const all = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(all)) return [];
+
+            if (!cleanCard) {
+                return all;
+            }
+
+            const mRaw = localStorage.getItem(`sm_portal_photos_${cleanCard}`) || localStorage.getItem(`portal_photos_${cleanCard}`);
+            const mList = mRaw ? JSON.parse(mRaw) : [];
+            const matchedAll = all.filter(p => String(p.cardId || '').trim().toLowerCase() === cleanCard);
+
+            const map = new Map();
+            [...mList, ...matchedAll].forEach(p => {
+                if (p && p.url && !map.has(p.url)) {
+                    map.set(p.url, p);
+                }
+            });
+            return Array.from(map.values());
+        } catch (e) {
+            return [];
+        }
+    }
 
     // Capture State
     let isCountingDown = false;
@@ -1163,7 +1229,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${recentPhotos.map(p => {
                         const dateLabel = p.timestamp ? new Date(p.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Recent';
                         return `
-                            <div class="profile-photo-card" title="Captured ${dateLabel}">
+                            <div class="profile-photo-card" data-url="${p.url}" title="Captured ${dateLabel}">
                                 <img src="${p.url}" alt="Capture" class="profile-photo-img" loading="lazy" />
                                 <span class="profile-photo-date">${dateLabel}</span>
                             </div>
@@ -1201,6 +1267,126 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `;
+
+        // Click handler to view photo QR overlay or full-size
+        const photoCards = mediaDisplay.querySelectorAll('.profile-photo-card');
+        photoCards.forEach(card => {
+            card.addEventListener('click', () => {
+                const photoUrl = card.getAttribute('data-url');
+                if (photoUrl) {
+                    showQrCodeForPhoto(photoUrl, [cardId]);
+                    if (captureModal) captureModal.classList.add('active');
+                    isCaptureModalOpen = true;
+                }
+            });
+        });
+    }
+
+    // --- Open User Profile Screen (Certifications + Recent Photos with offline/instant merge) ---
+    function openUserProfileScreen(cardIdToUse) {
+        // If already viewing profile and no new specific card requested, toggle back to playing media or home
+        if (isShowingCertifications && !cardIdToUse) {
+            isShowingCertifications = false;
+            if (currentPlayingMedia && currentPlayingMedia.file_path) {
+                renderAndDisplayMedia(currentPlayingMedia, currentPlayingMedia.id);
+            } else {
+                returnToHomeScreen();
+            }
+            return;
+        }
+
+        const targetCardId = cardIdToUse
+            || (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '')
+            || lastActiveMember?.id
+            || taggedTapBands[0]?.cardId
+            || contentIdInput.value.trim();
+
+        isShowingCertifications = true;
+        isShowingRegistration = false;
+        updatePhotoboothVisibility();
+
+        if (targetCardId) {
+            mediaDisplay.innerHTML = `
+                <div class="certifications-container">
+                    <span class="cert-badge">USER PROFILE • MEMBER PASSPORT</span>
+                    <h2 class="cert-title">Loading User Profile...</h2>
+                    <div class="reg-id-box">Card #${escapeHtml(targetCardId)}</div>
+                    <div class="capture-spinner" style="margin: 20px auto;"></div>
+                </div>
+            `;
+
+            const memberPromise = (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications)
+                ? Promise.resolve(currentPlayingMedia)
+                : fetchNeonOneMember(targetCardId);
+
+            const photosPromise = fetch(`${NEON_PROXY_URL}/api/portal-photos?cardId=${encodeURIComponent(targetCardId)}`)
+                .then(r => r.json())
+                .catch(() => ({ photos: [] }));
+
+            Promise.all([memberPromise, photosPromise]).then(([member, photosRes]) => {
+                const memberData = member || (currentPlayingMedia && currentPlayingMedia.id === targetCardId ? currentPlayingMedia : {
+                    id: targetCardId,
+                    displayName: lastActiveMember?.displayName || `Member #${targetCardId}`,
+                    certifications: [],
+                    membershipStatus: 'Active Member'
+                });
+
+                // Combine backend photos with local cached photos and session captures
+                const apiPhotos = Array.isArray(photosRes?.photos) ? photosRes.photos : [];
+                const localPhotos = getLocalPhotosForCard(targetCardId);
+
+                // Deduplicate photos by url / fileId
+                const photoMap = new Map();
+                [...localPhotos, ...apiPhotos].forEach(p => {
+                    if (p && p.url && !photoMap.has(p.url)) {
+                        photoMap.set(p.url, p);
+                    }
+                });
+
+                const allPhotos = Array.from(photoMap.values());
+                const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+                const now = Date.now();
+                const recentPhotos = allPhotos.filter(p => {
+                    if (!p.timestamp) return true;
+                    const t = new Date(p.timestamp).getTime();
+                    return !isNaN(t) && (now - t <= THIRTY_DAYS_MS);
+                });
+
+                recentPhotos.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+
+                renderCertificationsScreen(memberData, recentPhotos);
+            }).catch(err => {
+                console.error("[User Profile] Error loading profile:", err);
+                const localPhotos = getLocalPhotosForCard(targetCardId);
+                renderCertificationsScreen({
+                    id: targetCardId,
+                    displayName: lastActiveMember?.displayName || `Member #${targetCardId}`,
+                    certifications: [],
+                    membershipStatus: 'Active Member'
+                }, localPhotos);
+            });
+        } else {
+            // No member scanned yet: check if there are captures from this session
+            const sessionPhotos = getLocalPhotosForCard('');
+            if (sessionPhotos.length > 0 || lastUploadedPhotoUrl || lastCapturedDataUrl) {
+                const guestPhotos = [...sessionPhotos];
+                if (lastUploadedPhotoUrl && !guestPhotos.some(p => p.url === lastUploadedPhotoUrl)) {
+                    guestPhotos.unshift({ url: lastUploadedPhotoUrl, timestamp: new Date().toISOString() });
+                } else if (lastCapturedDataUrl && guestPhotos.length === 0) {
+                    guestPhotos.unshift({ url: lastCapturedDataUrl, timestamp: new Date().toISOString() });
+                }
+                renderCertificationsScreen({
+                    id: 'Session',
+                    displayName: 'Photobooth Session Captures',
+                    certifications: [],
+                    membershipStatus: 'Tap Band to Link'
+                }, guestPhotos);
+            } else {
+                mediaTitle.textContent = "Scan a Tap Card to view User Profile";
+                mediaTitle.classList.add('visible');
+                setTimeout(() => mediaTitle.classList.remove('visible'), 2500);
+            }
+        }
     }
 
     // --- PHOTOBOOTH MEDIA OPTIONS GALLERY MODAL ---
@@ -1497,6 +1683,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Shared Core Media Rendering & Display Helper ---
     async function renderAndDisplayMedia(data, cleanId) {
         currentPlayingMedia = { ...data, id: cleanId };
+        lastActiveMember = { id: cleanId, displayName: data.displayName || data.title?.replace("'s Portal", '') || `Member #${cleanId}` };
         isShowingRegistration = false;
         isShowingCertifications = false;
         const rawPath = data.file_path || '';
@@ -1654,10 +1841,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        closeCaptureModal();
-        closePhotoboothGalleryModal();
-
         const cleanId = String(contentId).trim();
+        const normalizedId = cleanId ? normalizeNfcTapCard(cleanId) : '';
+
+        // If currently viewing User Profile, scanning a card immediately opens that member's profile!
+        if (cleanId && isShowingCertifications) {
+            lastActiveMember = { id: normalizedId, displayName: `Member #${normalizedId}` };
+            openUserProfileScreen(normalizedId);
+            return;
+        }
+
+        closeCaptureModal(false);
+        closePhotoboothGalleryModal();
 
         // Physical Background Mode: Party photobooth mirror (No personal media or door transitions)
         if (!isAiBgRemovalEnabled) {
@@ -1668,10 +1863,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const normalizedId = normalizeNfcTapCard(cleanId);
             if (normalizedId) {
                 fetchNeonOneMember(normalizedId).then(member => {
                     const memberName = member?.preferredName || member?.firstName || member?.displayName || `Member #${normalizedId}`;
+                    lastActiveMember = { id: normalizedId, displayName: memberName };
                     if (!taggedTapBands.some(b => b.cardId === normalizedId)) {
                         taggedTapBands.push({ cardId: normalizedId, displayName: memberName });
                     }
@@ -1680,6 +1875,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast(`👋 Linked: ${namesList}! Press + to snap.`);
                     playBeep(920, 0.15, 0.8, 'triangle');
                     resetPhysicalModeIdleTimer();
+
+                    // If a photo was captured in this session, link it immediately!
+                    const photoUrlToLink = lastUploadedPhotoUrl || lastCapturedDataUrl;
+                    if (photoUrlToLink) {
+                        savePhotoToLocalHistory({
+                            id: 'photo_' + Date.now(),
+                            cardId: normalizedId,
+                            url: photoUrlToLink,
+                            fileId: lastUploadedFileId,
+                            timestamp: new Date().toISOString()
+                        });
+                        if (lastUploadedPhotoUrl) {
+                            try {
+                                fetch(`${NEON_PROXY_URL}/api/portal-photos`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        cardId: normalizedId,
+                                        url: lastUploadedPhotoUrl,
+                                        fileId: lastUploadedFileId,
+                                        timestamp: new Date().toISOString()
+                                    })
+                                }).catch(e => console.warn(`[v8.4] Error syncing photo to proxy for card ${normalizedId}:`, e));
+                            } catch (_) {}
+                        }
+                    }
                 });
             }
             return;
@@ -1690,8 +1911,6 @@ document.addEventListener('DOMContentLoaded', () => {
             openPhotoboothPickerModal();
             return;
         }
-
-        const normalizedId = normalizeNfcTapCard(cleanId);
 
         if (photoboothCanvas) {
             photoboothCanvas.classList.remove('visible');
@@ -2124,14 +2343,36 @@ document.addEventListener('DOMContentLoaded', () => {
         renderCompositeCapture();
         resetCaptureInactivityTimer();
 
+        // Update local captured image data
+        try {
+            if (captureCanvas) {
+                lastCapturedDataUrl = captureCanvas.toDataURL('image/jpeg', 0.92);
+            }
+        } catch (_) {}
+
+        // Reset uploaded flag and debounce re-upload with newly selected backdrop
+        isPhotoUploaded = false;
+        if (captureSaveBtn) {
+            captureSaveBtn.classList.remove('saved');
+            captureSaveBtn.textContent = '💾 Updating backdrop...';
+            captureSaveBtn.disabled = true;
+        }
+
+        if (autoSaveDebounceTimer) {
+            clearTimeout(autoSaveDebounceTimer);
+        }
+        autoSaveDebounceTimer = setTimeout(() => {
+            uploadCaptureToGoogleDrive();
+        }, 1200);
+
         const item = currentBackdropsList[index];
         if (!item.isSceneBackdrop) {
             const resolvedUrl = normalizeMediaUrl(item.file_path, item.type);
             if (loadedBackdropImages[resolvedUrl] === null) {
-                showToast(`⚠️ "${item.title}" host blocks direct export. Cyber portal used!`);
+                showToast(`ℹ️ "${item.title}" host blocks direct export. Cyber portal used!`);
             }
         }
-        console.log(`[v5.4] Switched to backdrop #${index} (${item.title})`);
+        console.log(`[v8.4] Switched to backdrop #${index} (${item.title})`);
     }
 
     // --- HTML Sanitization Helper ---
@@ -2222,8 +2463,35 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!name) name = `Member #${normalized}`;
 
             tempEntry.displayName = name;
+            lastActiveMember = { id: normalized, displayName: name };
             renderTaggedTapBandsUI();
             showToast(`✅ Linked ${name}!`);
+
+            // If a photo was already snapped or uploaded in this session, link it immediately!
+            const photoUrlToLink = lastUploadedPhotoUrl || lastCapturedDataUrl;
+            if (photoUrlToLink) {
+                savePhotoToLocalHistory({
+                    id: 'photo_' + Date.now(),
+                    cardId: normalized,
+                    url: photoUrlToLink,
+                    fileId: lastUploadedFileId,
+                    timestamp: new Date().toISOString()
+                });
+                if (lastUploadedPhotoUrl) {
+                    try {
+                        fetch(`${NEON_PROXY_URL}/api/portal-photos`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                cardId: normalized,
+                                url: lastUploadedPhotoUrl,
+                                fileId: lastUploadedFileId,
+                                timestamp: new Date().toISOString()
+                            })
+                        }).catch(e => console.warn(`[v8.4] Error syncing photo to proxy for card ${normalized}:`, e));
+                    } catch (_) {}
+                }
+            }
         } catch (err) {
             console.warn("[v6.7] Error resolving member name for Tap Band:", err);
             renderTaggedTapBandsUI();
@@ -2260,6 +2528,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function unlinkCurrentPerson() {
         taggedTapBands = [];
         currentPlayingMedia = null;
+        lastActiveMember = null;
+        lastCapturedDataUrl = null;
         if (contentIdInput) contentIdInput.value = '';
         if (mediaTitle) {
             mediaTitle.textContent = '';
@@ -2273,11 +2543,11 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(physicalModeIdleTimer);
             physicalModeIdleTimer = null;
         }
-        console.log("[v8.1] Portal unlinked from person. State reset for next attendee.");
+        console.log("[v8.4] Portal unlinked from person. State reset for next attendee.");
     }
 
     // Close the capture modal and return to portal view
-    function closeCaptureModal() {
+    function closeCaptureModal(shouldUnlink = true) {
         const wasOpen = isCaptureModalOpen || isCountingDown || isUploadingPhoto;
         isCaptureModalOpen = false;
         isCountingDown = false;
@@ -2285,8 +2555,13 @@ document.addEventListener('DOMContentLoaded', () => {
         isPhotoUploaded = false;
         clearCaptureInactivityTimer();
 
-        // Unlink so next photo session never attributes to this person
-        if (wasOpen) {
+        if (autoSaveDebounceTimer) {
+            clearTimeout(autoSaveDebounceTimer);
+            autoSaveDebounceTimer = null;
+        }
+
+        // Unlink so next photo session never attributes to this person (unless user is navigating to profile)
+        if (wasOpen && shouldUnlink) {
             unlinkCurrentPerson();
         }
 
@@ -2306,18 +2581,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         isContestPhotoSubmitted = false;
-        lastUploadedPhotoUrl = '';
-        lastUploadedFileId = '';
+        if (shouldUnlink) {
+            lastUploadedPhotoUrl = '';
+            lastUploadedFileId = '';
+        }
+
         if (contestUploadBtn) {
             contestUploadBtn.classList.remove('submitted');
             contestUploadBtn.textContent = '🏆 Upload Photo to Contest (-)';
+        }
+        if (captureSaveBtn) {
+            captureSaveBtn.classList.remove('saved');
+            captureSaveBtn.textContent = '💾 Auto-saving to Google Drive...';
+            captureSaveBtn.disabled = false;
         }
 
         updatePhotoboothVisibility();
         updateCostumeContestUI();
 
         if (isAiBgRemovalEnabled) {
-            if (wasOpen && !isAtHomeScreen) {
+            if (wasOpen && shouldUnlink && !isAtHomeScreen) {
                 isAtHomeScreen = true;
                 isShowingRegistration = false;
                 isShowingCertifications = false;
@@ -2329,7 +2612,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 mediaDisplay.appendChild(img);
             }
         } else {
-            if (mediaDisplay) mediaDisplay.innerHTML = '';
+            if (shouldUnlink && mediaDisplay) mediaDisplay.innerHTML = '';
         }
     }
 
@@ -2417,32 +2700,63 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderBackdropSelectorPills();
                 await renderCompositeCapture();
 
+                // Capture local data URL
+                try {
+                    lastCapturedDataUrl = captureCanvas.toDataURL('image/jpeg', 0.92);
+                } catch (_) {}
+
                 // Retain any members tagged prior to countdown (e.g. tapped before pressing +).
-                // Only if no members were pre-tagged, check currentPlayingMedia as fallback.
-                if (taggedTapBands.length === 0 && currentPlayingMedia && currentPlayingMedia.id && !currentPlayingMedia.isSceneBackdrop) {
-                    const primaryCard = normalizeNfcTapCard(currentPlayingMedia.id);
-                    const primaryName = currentPlayingMedia.displayName || currentPlayingMedia.title?.replace("'s Portal", '') || `Member #${primaryCard}`;
-                    taggedTapBands.push({ cardId: primaryCard, displayName: primaryName });
+                // Only if no members were pre-tagged, check currentPlayingMedia or lastActiveMember as fallback.
+                if (taggedTapBands.length === 0) {
+                    const fallbackMember = (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop) ? currentPlayingMedia : lastActiveMember;
+                    if (fallbackMember && fallbackMember.id) {
+                        const primaryCard = normalizeNfcTapCard(fallbackMember.id);
+                        const primaryName = fallbackMember.displayName || fallbackMember.title?.replace("'s Portal", '') || `Member #${primaryCard}`;
+                        taggedTapBands.push({ cardId: primaryCard, displayName: primaryName });
+                        lastActiveMember = { id: primaryCard, displayName: primaryName };
+                    }
                 }
                 renderTaggedTapBandsUI();
+
+                // Save locally immediately so User Profile (/ key) displays it with 0ms delay!
+                const initialCard = taggedTapBands[0]?.cardId || lastActiveMember?.id || '';
+                if (lastCapturedDataUrl) {
+                    savePhotoToLocalHistory({
+                        id: 'photo_' + Date.now(),
+                        cardId: initialCard,
+                        url: lastCapturedDataUrl,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+
+                if (captureSaveBtn) {
+                    captureSaveBtn.classList.remove('saved');
+                    captureSaveBtn.textContent = '💾 Auto-saving to Google Drive...';
+                    captureSaveBtn.disabled = true;
+                }
+
+                // Automatically trigger background upload to Google Drive and proxy!
+                uploadCaptureToGoogleDrive();
 
                 // Start 90-second inactivity timeout
                 startCaptureInactivityTimer();
 
-                console.log(`[v5.5] Photo captured. Backdrop selection ready (${currentBackdropsList.length} options).`);
+                console.log(`[v8.4] Photo captured & auto-saving in background. Backdrop selection ready (${currentBackdropsList.length} options).`);
             }
         }, 1000);
     }
 
     // Upload composite photo to Google Drive via Google Apps Script Web App
     async function uploadCaptureToGoogleDrive() {
-        if (isUploadingPhoto || isPhotoUploaded) return;
+        if (isUploadingPhoto || isPhotoUploaded) return lastUploadedPhotoUrl;
 
-        if (!captureCanvas) return;
+        if (!captureCanvas) return null;
         isUploadingPhoto = true;
 
-        if (captureSpinner) {
-            captureSpinner.classList.add('active');
+        if (captureSaveBtn) {
+            captureSaveBtn.classList.remove('saved');
+            captureSaveBtn.textContent = '💾 Saving to Google Drive...';
+            captureSaveBtn.disabled = true;
         }
 
         let imageData = null;
@@ -2529,20 +2843,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 lastUploadedPhotoUrl = targetUrl;
                 lastUploadedFileId = fileId;
 
-                // Collect target card IDs from tagged Tap Bands (or fallback to active media / search input)
-                let targetCardIds = taggedTapBands.map(b => b.cardId);
+                // Collect target card IDs from tagged Tap Bands (or fallback to active media / search input / lastActiveMember)
+                let targetCardIds = taggedTapBands.map(b => b.cardId).filter(Boolean);
                 if (targetCardIds.length === 0) {
-                    const fallbackId = currentPlayingMedia?.id || contentIdInput.value.trim() || '';
+                    const fallbackId = (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '') || lastActiveMember?.id || contentIdInput.value.trim() || '';
                     if (fallbackId) targetCardIds.push(normalizeNfcTapCard(fallbackId));
                 }
                 if (targetCardIds.length === 0) {
                     targetCardIds.push('');
                 }
 
-                console.log(`[v6.7] Syncing capture photo to ${targetCardIds.length} linked member(s):`, targetCardIds);
+                console.log(`[v8.4] Syncing capture photo to ${targetCardIds.length} linked member(s):`, targetCardIds);
 
-                // Sync photo to Social Medium App backend proxy for EACH tagged Tap Band
+                // Sync photo to Social Medium App backend proxy & localStorage history for EACH tagged Tap Band
                 targetCardIds.forEach(cardId => {
+                    savePhotoToLocalHistory({
+                        id: 'photo_' + Date.now(),
+                        cardId: cardId,
+                        url: targetUrl,
+                        fileId: fileId,
+                        timestamp: new Date().toISOString()
+                    });
                     try {
                         fetch(`${NEON_PROXY_URL}/api/portal-photos`, {
                             method: 'POST',
@@ -2553,14 +2874,18 @@ document.addEventListener('DOMContentLoaded', () => {
                                 fileId: fileId,
                                 timestamp: new Date().toISOString()
                             })
-                        }).catch(err => console.warn(`[v6.7] Photo sync warning for card "${cardId}":`, err));
+                        }).catch(err => console.warn(`[v8.4] Photo sync warning for card "${cardId}":`, err));
                     } catch (e) {}
                 });
 
-                showQrCodeForPhoto(targetUrl, targetCardIds);
                 isPhotoUploaded = true;
+                if (captureSaveBtn) {
+                    captureSaveBtn.classList.add('saved');
+                    captureSaveBtn.textContent = '✅ Saved to Google Drive & Profile!';
+                    captureSaveBtn.disabled = false;
+                }
                 const memberCount = targetCardIds.filter(Boolean).length;
-                showToast(`🚀 Saved for ${memberCount > 0 ? memberCount : 1} member(s)! Scan QR to open in app`);
+                showToast(`🚀 Photo saved to Google Drive & Profile!`);
                 return targetUrl;
             } else {
                 throw new Error(result.message || "Upload did not return URL");
@@ -2582,6 +2907,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             if (captureSpinner) {
                 captureSpinner.classList.remove('active');
+            }
+            if (captureSaveBtn && !isPhotoUploaded) {
+                captureSaveBtn.disabled = false;
+                captureSaveBtn.textContent = '💾 Save Photo (Enter)';
             }
             isUploadingPhoto = false;
         }
@@ -2856,14 +3185,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 captureNfcBuffer = '';
             }
 
-            // Backspace or Esc closes the modal and resumes media (Home / Cancel key)
-            if (event.key === 'Backspace' || event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash' || event.key === 'Escape') {
+            // Backspace or Esc closes the modal and returns home (Cancel key)
+            if (event.key === 'Backspace' || event.key === 'Escape') {
                 event.preventDefault();
                 if (backdropDebounceTimer) {
                     clearTimeout(backdropDebounceTimer);
                     backdropDebounceTimer = null;
                 }
-                closeCaptureModal();
+                closeCaptureModal(true); // true = unlinks user for next attendee session
+                return;
+            }
+
+            // Slash / NumpadDivide: Opens User Profile with Certifications & Recent Photos
+            if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash') {
+                event.preventDefault();
+                if (backdropDebounceTimer) {
+                    clearTimeout(backdropDebounceTimer);
+                    backdropDebounceTimer = null;
+                }
+                const targetId = taggedTapBands[0]?.cardId || lastActiveMember?.id || (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '') || contentIdInput.value.trim();
+                if (!isPhotoUploaded && !isUploadingPhoto) {
+                    uploadCaptureToGoogleDrive();
+                }
+                closeCaptureModal(false); // false = keep user profile linked!
+                openUserProfileScreen(targetId);
                 return;
             }
 
@@ -2878,7 +3223,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (event.key === '+' || event.code === 'NumpadAdd' || event.key === '=' || ((isPhotoUploaded || isContestPhotoSubmitted) && (event.key === ' ' || event.code === 'Space'))) {
                 event.preventDefault();
                 if (!isUploadingPhoto) {
-                    closeCaptureModal();
+                    closeCaptureModal(false); // Keep user linked for retake
                     startPhotoCountdown();
                     return;
                 }
@@ -2896,27 +3241,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     // NFC RFID scan burst completed!
                     const scannedCard = captureNfcBuffer.trim();
                     captureNfcBuffer = '';
-                    console.log(`[v8.1] NFC Tap Band scanned in capture modal: "${scannedCard}"`);
-                    if (isPhotoUploaded || isContestPhotoSubmitted) {
-                        // Previous photo is already saved! Close old modal and link newly scanned person for next photo
-                        closeCaptureModal();
-                        fetchMedia(scannedCard);
-                        return;
-                    }
+                    console.log(`[v8.4] NFC Tap Band scanned in capture modal: "${scannedCard}"`);
                     addTaggedTapBand(scannedCard);
                     return;
                 }
 
-                if (isPhotoUploaded || isContestPhotoSubmitted) {
-                    // Photo was already saved and QR is on screen. Enter closes and resets for next person
-                    captureNfcBuffer = '';
-                    closeCaptureModal();
-                    return;
-                }
-
-                // Deliberate human Enter press to confirm and save to Google Drive & App
+                // Deliberate human Enter press: if not uploaded, upload; if already uploaded, open QR code overlay to download!
                 captureNfcBuffer = '';
-                uploadCaptureToGoogleDrive();
+                if (!isPhotoUploaded && !isUploadingPhoto) {
+                    uploadCaptureToGoogleDrive();
+                } else if (lastUploadedPhotoUrl) {
+                    showQrCodeForPhoto(lastUploadedPhotoUrl, taggedTapBands.map(b => b.cardId));
+                }
                 return;
             }
 
@@ -3089,68 +3425,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Hotkey: / toggles User Profile Screen (Certifications & Recent Photos within 30 days)
         if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash') {
             event.preventDefault();
-
-            // If already viewing profile, toggle back to playing media (if available)
-            if (isShowingCertifications) {
-                isShowingCertifications = false;
-                if (currentPlayingMedia && currentPlayingMedia.file_path) {
-                    renderAndDisplayMedia(currentPlayingMedia, currentPlayingMedia.id);
-                } else {
-                    returnToHomeScreen();
-                }
-                return;
-            }
-
-            const targetCardId = currentPlayingMedia?.id || contentIdInput.value.trim();
-
-            if (targetCardId) {
-                mediaDisplay.innerHTML = `
-                    <div class="certifications-container">
-                        <span class="cert-badge">USER PROFILE</span>
-                        <h2 class="cert-title">Loading User Profile...</h2>
-                        <div class="reg-id-box">Card #${targetCardId}</div>
-                        <div class="capture-spinner" style="margin: 20px auto;"></div>
-                    </div>
-                `;
-
-                const memberPromise = (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications)
-                    ? Promise.resolve(currentPlayingMedia)
-                    : fetchNeonOneMember(targetCardId);
-
-                const photosPromise = fetch(`${NEON_PROXY_URL}/api/portal-photos?cardId=${encodeURIComponent(targetCardId)}`)
-                    .then(r => r.json())
-                    .catch(() => ({ photos: [] }));
-
-                Promise.all([memberPromise, photosPromise]).then(([member, photosRes]) => {
-                    const memberData = member || (currentPlayingMedia && currentPlayingMedia.id === targetCardId ? currentPlayingMedia : {
-                        id: targetCardId,
-                        displayName: 'Member',
-                        certifications: [],
-                        membershipStatus: 'Active Member'
-                    });
-                    const allPhotos = Array.isArray(photosRes?.photos) ? photosRes.photos : [];
-                    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-                    const now = Date.now();
-                    const recentPhotos = allPhotos.filter(p => {
-                        if (!p.timestamp) return true;
-                        const t = new Date(p.timestamp).getTime();
-                        return !isNaN(t) && (now - t <= THIRTY_DAYS_MS);
-                    });
-                    renderCertificationsScreen(memberData, recentPhotos);
-                }).catch(err => {
-                    console.error("[User Profile] Error loading profile:", err);
-                    renderCertificationsScreen({
-                        id: targetCardId,
-                        displayName: 'Member',
-                        certifications: [],
-                        membershipStatus: 'Active Member'
-                    }, []);
-                });
-            } else {
-                mediaTitle.textContent = "Scan a Tap Card to view User Profile";
-                mediaTitle.classList.add('visible');
-                setTimeout(() => mediaTitle.classList.remove('visible'), 2500);
-            }
+            openUserProfileScreen();
             return;
         }
 
@@ -3161,6 +3436,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 contentIdInput.value = '';
                 contentIdInput.blur();
                 isShowingCertifications = false;
+                unlinkCurrentPerson(); // Resets attendee state for fresh visitor
                 returnToHomeScreen();
                 return;
             }
@@ -3201,8 +3477,30 @@ document.addEventListener('DOMContentLoaded', () => {
         deleteModal.addEventListener('pointerdown', resetDeleteInactivityTimer);
     }
 
+    // Click event listeners for Capture Modal actions
+    if (captureSaveBtn) {
+        captureSaveBtn.addEventListener('click', () => {
+            if (!isPhotoUploaded && !isUploadingPhoto) {
+                uploadCaptureToGoogleDrive();
+            } else if (lastUploadedPhotoUrl) {
+                showQrCodeForPhoto(lastUploadedPhotoUrl, taggedTapBands.map(b => b.cardId));
+            }
+        });
+    }
+
+    if (captureProfileBtn) {
+        captureProfileBtn.addEventListener('click', () => {
+            const targetId = taggedTapBands[0]?.cardId || lastActiveMember?.id || (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '') || contentIdInput.value.trim();
+            if (!isPhotoUploaded && !isUploadingPhoto) {
+                uploadCaptureToGoogleDrive();
+            }
+            closeCaptureModal(false);
+            openUserProfileScreen(targetId);
+        });
+    }
+
     // Initial startup
-    console.log("Portal Door v8.3 initialized (Recursion guard fixed; User Profile ready).");
+    console.log("Portal Door v8.4 initialized (Auto-save to Google Drive & instant User Profile photo sync ready).");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();

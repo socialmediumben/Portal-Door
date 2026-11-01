@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Door</title>
-    <link rel="stylesheet" href="static/style.css?v=8.3">
+    <link rel="stylesheet" href="static/style.css?v=8.4">
     <!-- Google MediaPipe for AI Multi-Person Background Segmentation (Groups & Solo) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
@@ -23,7 +23,7 @@
                 <button id="bgRemovalToggleBtn" class="dev-photobooth-btn" title="Toggle Physical / Digital Background (-)">🎭 Digital Background</button>
                 <button id="costumeContestToggleBtn" class="dev-photobooth-btn" title="Toggle Costume Contest Mode (C)">🏆 Contest: OFF</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
-                <span class="version-badge">v8.3</span>
+                <span class="version-badge">v8.4</span>
             </div>
         </div>
         <div class="controls-header">
@@ -136,10 +136,21 @@
                 </div>
             </div>
 
+            <!-- Instant Save Status & User Profile Actions -->
+            <div class="capture-actions-row">
+                <button id="captureSaveBtn" class="capture-action-btn primary" title="Save Photo to Google Drive and App (Enter)">
+                    💾 Auto-saving to Google Drive...
+                </button>
+                <button id="captureProfileBtn" class="capture-action-btn secondary" title="View User Profile & Photos (/)">
+                    👤 User Profile (/)
+                </button>
+            </div>
+
             <div class="capture-footer-guide">
                 <span><kbd>0-9</kbd> Backdrop</span>
-                <span><kbd>📡 Tap Band</kbd> Link Member(s)</span>
-                <span id="captureConfirmHint"><kbd>Enter</kbd> Save to Drive & App</span>
+                <span><kbd>📡 Tap Band</kbd> Link Member</span>
+                <span id="captureProfileHint"><kbd>/</kbd> User Profile</span>
+                <span id="captureConfirmHint"><kbd>Enter</kbd> Save / QR</span>
                 <span id="contestHotkeyHint" style="display: none;"><kbd>-</kbd> Submit to Contest</span>
                 <span><kbd>+</kbd> Retake / Next</span>
                 <span><kbd>Backspace</kbd> Close</span>
@@ -216,6 +227,6 @@
 
     <video id="transitionVideo" class="transition-overlay" muted playsinline preload="auto"></video>
 
-    <script src="static/script.js?v=8.3"></script>
+    <script src="static/script.js?v=8.4"></script>
 </body>
 </html>
