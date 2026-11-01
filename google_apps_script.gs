@@ -53,6 +53,94 @@ function testAuthorization() {
   Logger.log("Authorization Successful! Connected to Sheet: " + ss.getName() + " | Tab: " + sheet.getName());
 }
 
+// Function to automatically import all photos from a Google Drive folder into the "Photobooth_Photos" sheet tab
+function importPhotosFromAlbum(folderId, targetCardId) {
+  if (!folderId) folderId = '16piBJbrJu3wpUfR3JD2_tjQHI_Uw_z0D'; // Album provided by user
+  
+  var folder;
+  try {
+    folder = DriveApp.getFolderById(folderId);
+  } catch (err) {
+    Logger.log("Could not find folder with ID: " + folderId + " Error: " + err);
+    return { status: 'error', message: err.toString() };
+  }
+
+  var ss = getSpreadsheet();
+  var photoSheet = getPhotoboothSheet(ss);
+  var values = photoSheet.getDataRange().getValues();
+  var existingIds = {};
+  var fileCol = 5;
+  var urlCol = 4;
+
+  for (var r = 1; r < values.length; r++) {
+    var fId = String(values[r][fileCol] || '').trim();
+    if (fId) existingIds[fId] = true;
+    var u = String(values[r][urlCol] || '').trim();
+    if (u) existingIds[u] = true;
+  }
+
+  var files = folder.getFiles();
+  var importedCount = 0;
+  var skippedCount = 0;
+  var importedList = [];
+
+  while (files.hasNext()) {
+    var file = files.next();
+    var mime = file.getMimeType();
+    var name = file.getName();
+    
+    // Only import image files
+    if (!mime.startsWith('image/') && !name.match(/\.(jpe?g|png|webp|gif|bmp)$/i)) {
+      continue;
+    }
+
+    var fid = file.getId();
+    var directUrl = "https://lh3.googleusercontent.com/d/" + fid;
+    if (existingIds[fid] || existingIds[directUrl]) {
+      skippedCount++;
+      continue;
+    }
+
+    // Ensure image is viewable with link
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (_) {}
+
+    var timestamp = file.getDateCreated().toISOString();
+    var fileDesc = file.getDescription() || '';
+
+    // Determine card ID: targetCardId > file description > filename match > blank
+    var cardId = targetCardId ? String(targetCardId).trim() : (fileDesc ? String(fileDesc).trim() : '');
+    if (!cardId) {
+      var fnMatch = name.match(/Portal_Photo_([0-9a-zA-Z]+)_/);
+      if (fnMatch && fnMatch[1]) cardId = fnMatch[1];
+    }
+
+    photoSheet.appendRow([
+      timestamp,
+      cardId,
+      cardId ? ('Portal Photo #' + cardId) : 'Portal Photo',
+      'image',
+      directUrl,
+      fid
+    ]);
+
+    existingIds[fid] = true;
+    importedCount++;
+    importedList.push({ fileId: fid, name: name, cardId: cardId });
+  }
+
+  Logger.log("Import Complete! Imported " + importedCount + " new photos. Skipped " + skippedCount + " duplicates.");
+  return {
+    status: 'success',
+    folderName: folder.getName(),
+    folderId: folderId,
+    imported: importedCount,
+    skipped: skippedCount,
+    photos: importedList
+  };
+}
+
 // Helper: Read photos from the Photobooth_Photos sheet tab
 function readPhotosFromSheet() {
   var photos = [];
@@ -135,9 +223,17 @@ function readPhotosFromDrive() {
   return photos;
 }
 
-// GET handler: Returns all photos as JSON (prefers Sheet, falls back to Drive)
+// GET handler: Returns all photos as JSON (prefers Sheet, falls back to Drive), or triggers import
 function doGet(e) {
   try {
+    // Check if import action was requested via GET URL
+    if (e && e.parameter && (e.parameter.action === 'import' || e.parameter.action === 'import_folder')) {
+      var targetFolder = e.parameter.folderId || '16piBJbrJu3wpUfR3JD2_tjQHI_Uw_z0D';
+      var targetCard = e.parameter.cardId || '';
+      var importResult = importPhotosFromAlbum(targetFolder, targetCard);
+      return ContentService.createTextOutput(JSON.stringify(importResult)).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var photos = readPhotosFromSheet();
     if (photos.length === 0) {
       photos = readPhotosFromDrive();
@@ -158,6 +254,16 @@ function doGet(e) {
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
+
+    // ==========================================
+    // ACTION: IMPORT ALL PHOTOS FROM GOOGLE DRIVE FOLDER
+    // ==========================================
+    if (data.action === 'import' || data.action === 'import_folder') {
+      var targetFolder = data.folderId || '16piBJbrJu3wpUfR3JD2_tjQHI_Uw_z0D';
+      var targetCard = data.cardId || '';
+      var importResult = importPhotosFromAlbum(targetFolder, targetCard);
+      return ContentService.createTextOutput(JSON.stringify(importResult)).setMimeType(ContentService.MimeType.JSON);
+    }
 
     // ==========================================
     // ACTION 1: DELETE MEDIA ROW FROM SPREADSHEET
