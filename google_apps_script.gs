@@ -59,12 +59,117 @@ function getPhotoboothSheet(ss) {
   return sheet;
 }
 
+// Helper to get or automatically create the "Game_Room_Media" sheet tab
+function getGameRoomSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('Game_Room_Media');
+  if (!sheet) {
+    sheet = ss.insertSheet('Game_Room_Media');
+    sheet.appendRow(['Timestamp', 'Card_ID', 'Title', 'Type', 'Target_Screen', 'Media_URL', 'File_ID', 'Uploader_Name']);
+    // Format header row bold
+    sheet.getRange(1, 1, 1, 8).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+// Helper to get or automatically create the "Game Room Media" Google Drive folder
+function getGameRoomFolder() {
+  var folders = DriveApp.getFoldersByName('Game Room Media');
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  return DriveApp.createFolder('Game Room Media');
+}
+
+// Helper to rename spreadsheet to "SM App Database"
+function renameSpreadsheetToSMAppDatabase() {
+  var ss = getSpreadsheet();
+  try {
+    ss.rename('SM App Database');
+  } catch (err) {
+    Logger.log("Could not rename spreadsheet: " + err);
+  }
+  return ss.getName();
+}
+
+// Helper: Read media records from the Game_Room_Media sheet tab
+function readGameRoomMediaFromSheet(targetCardId) {
+  var items = [];
+  try {
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName('Game_Room_Media');
+    if (!sheet) return items;
+
+    var values = sheet.getDataRange().getDisplayValues();
+    if (!values || values.length <= 1) return items;
+
+    var header = values[0];
+    var timeIdx = 0, cardIdx = 1, titleIdx = 2, typeIdx = 3, screenIdx = 4, urlIdx = 5, fileIdx = 6, uploaderIdx = 7;
+
+    for (var i = 0; i < header.length; i++) {
+      var h = String(header[i]).toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (h.includes('time') || h.includes('date')) timeIdx = i;
+      else if (h.includes('card') || h === 'id' || h.includes('user')) cardIdx = i;
+      else if (h.includes('title') || h.includes('name')) titleIdx = i;
+      else if (h.includes('type')) typeIdx = i;
+      else if (h.includes('screen') || h.includes('target')) screenIdx = i;
+      else if (h.includes('url') || h.includes('link') || h.includes('media') || h.includes('image')) urlIdx = i;
+      else if (h.includes('file')) fileIdx = i;
+      else if (h.includes('uploader') || h.includes('author') || h.includes('member')) uploaderIdx = i;
+    }
+
+    for (var r = 1; r < values.length; r++) {
+      var row = values[r];
+      var url = String(row[urlIdx] || '').trim();
+      if (!url) continue;
+
+      var fileId = String(row[fileIdx] || '').trim();
+      var cardId = String(row[cardIdx] || '').trim();
+      var timestamp = row[timeIdx] ? new Date(row[timeIdx]).toISOString() : new Date().toISOString();
+
+      if (targetCardId) {
+        var cleanTarget = String(targetCardId).trim();
+        var cardTokens = cardId.split(/[,;\s]+/).map(function(t){ return t.trim(); });
+        if (cardTokens.indexOf(cleanTarget) === -1 && cardId !== cleanTarget) {
+          continue;
+        }
+      }
+
+      items.push({
+        id: fileId || ('gameroom_' + r),
+        fileId: fileId,
+        cardId: cardId,
+        title: String(row[titleIdx] || 'Custom Battlemap').trim(),
+        type: String(row[typeIdx] || 'map').trim(),
+        targetScreen: String(row[screenIdx] || 'table').trim(),
+        url: url,
+        downloadUrl: fileId ? ("https://drive.google.com/uc?export=download&id=" + fileId) : url,
+        uploaderName: String(row[uploaderIdx] || '').trim(),
+        timestamp: timestamp
+      });
+    }
+
+    // Sort newest first
+    items.sort(function(a, b) {
+      return new Date(b.timestamp) - new Date(a.timestamp);
+    });
+  } catch (err) {
+    Logger.log("Error reading gameroom media from sheet: " + err);
+  }
+  return items;
+}
+
 // One-time authorization trigger function - select this in Apps Script and click Run
 function testAuthorization() {
   var ss = getSpreadsheet();
+  try {
+    ss.rename('SM App Database');
+  } catch (_) {}
   var sheet = getPhotoboothSheet(ss);
+  var gameSheet = getGameRoomSheet(ss);
   DriveApp.getRootFolder();
-  Logger.log("Authorization Successful! Connected to Sheet: " + ss.getName() + " | Tab: " + sheet.getName());
+  getGameRoomFolder();
+  Logger.log("Authorization Successful! Connected to Sheet: " + ss.getName() + " | Tabs: " + sheet.getName() + ", " + gameSheet.getName());
 }
 
 // Function to automatically import all photos from a Google Drive folder into the "Photobooth_Photos" sheet tab
@@ -267,6 +372,25 @@ function doGet(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
+    // Check if renaming spreadsheet was requested
+    if (e && e.parameter && e.parameter.action === 'rename_spreadsheet') {
+      var currentName = renameSpreadsheetToSMAppDatabase();
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        spreadsheetName: currentName
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Check if Game Room media was requested via GET URL
+    if (e && e.parameter && (e.parameter.action === 'gameroom_media' || e.parameter.action === 'get_gameroom_media' || e.parameter.tab === 'Game_Room_Media')) {
+      var grItems = readGameRoomMediaFromSheet(e.parameter.cardId);
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        count: grItems.length,
+        items: grItems
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var photos = readPhotosFromSheet();
     if (photos.length === 0) {
       photos = readPhotosFromDrive();
@@ -369,6 +493,157 @@ function doPost(e) {
         status: 'success',
         count: photos.length,
         photos: photos
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ==========================================
+    // ACTION 2B: RENAME SPREADSHEET TO "SM App Database"
+    // ==========================================
+    if (data.action === 'rename_spreadsheet') {
+      var currentName = renameSpreadsheetToSMAppDatabase();
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        spreadsheetName: currentName
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ==========================================
+    // ACTION 2C: LIST / QUERY GAME ROOM MEDIA
+    // ==========================================
+    if (data.action === 'gameroom_media' || data.action === 'get_gameroom_media') {
+      var grItems = readGameRoomMediaFromSheet(data.cardId);
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        count: grItems.length,
+        items: grItems
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ==========================================
+    // ACTION 2D: UPLOAD GAME ROOM MEDIA (SAVED TO "Game Room Media" DRIVE FOLDER & "Game_Room_Media" TAB)
+    // ==========================================
+    if (data.action === 'upload_gameroom_media' || data.action === 'upload_game_room_media') {
+      var rawFileData = data.file || data.image || data.data;
+      if (!rawFileData) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          message: 'No file data provided.'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      var cardIdTag = data.cardId ? String(data.cardId).trim() : '';
+      var uploaderName = String(data.uploaderName || '').trim();
+      var title = String(data.title || '').trim();
+      var type = String(data.type || 'map').trim();
+      var targetScreen = String(data.targetScreen || (type === 'map' ? 'table' : type === 'video' ? 'window' : 'frame')).trim();
+      var mimeType = String(data.mimeType || 'image/jpeg').trim();
+
+      var base64Data = rawFileData.replace(/^data:[^;]+;base64,/, '');
+      var fileBytes = Utilities.base64Decode(base64Data);
+      var timestampStr = data.timestamp || new Date().toISOString();
+
+      var defaultExt = mimeType.includes('png') ? '.png' : mimeType.includes('webp') ? '.webp' : mimeType.includes('mp4') ? '.mp4' : mimeType.includes('webm') ? '.webm' : '.jpg';
+      var rawFileName = String(data.fileName || '').trim();
+      var fileName = rawFileName || ('GameRoom_' + (title ? title.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Media') + '_' + new Date().getTime() + defaultExt);
+      if (!title) {
+        title = rawFileName ? rawFileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') : ('Game Room Art ' + new Date().toLocaleDateString());
+      }
+
+      var blob = Utilities.newBlob(fileBytes, mimeType, fileName);
+      var folder = getGameRoomFolder();
+      var file = folder.createFile(blob);
+
+      if (cardIdTag) {
+        file.setDescription(cardIdTag + (uploaderName ? (' - ' + uploaderName) : ''));
+      }
+
+      // Allow anyone with the link to view the file
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+      var directUrl = "https://lh3.googleusercontent.com/d/" + file.getId();
+      var downloadUrl = "https://drive.google.com/uc?export=download&id=" + file.getId();
+      var finalUrl = mimeType.startsWith('video/') ? downloadUrl : directUrl;
+
+      // Permanently append row to Game_Room_Media tab
+      var ss = getSpreadsheet();
+      var gameSheet = getGameRoomSheet(ss);
+      var targetRow = getLastContentRow(gameSheet) + 1;
+
+      gameSheet.getRange(targetRow, 1, 1, 8).setNumberFormat('@').setValues([[
+        timestampStr,
+        cardIdTag,
+        title,
+        type,
+        targetScreen,
+        finalUrl,
+        file.getId(),
+        uploaderName
+      ]]);
+
+      var createdItem = {
+        id: file.getId(),
+        fileId: file.getId(),
+        cardId: cardIdTag,
+        title: title,
+        type: type,
+        targetScreen: targetScreen,
+        url: finalUrl,
+        downloadUrl: downloadUrl,
+        uploaderName: uploaderName,
+        timestamp: timestampStr
+      };
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        fileId: file.getId(),
+        url: finalUrl,
+        downloadUrl: downloadUrl,
+        item: createdItem
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ==========================================
+    // ACTION 2E: DELETE GAME ROOM MEDIA FROM SHEET & DRIVE
+    // ==========================================
+    if (data.action === 'delete_gameroom_media') {
+      var targetId = String(data.id || data.fileId || '').trim();
+      if (!targetId) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          message: 'No ID or fileId provided for deletion.'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      var ss = getSpreadsheet();
+      var gameSheet = getGameRoomSheet(ss);
+      var values = gameSheet.getDataRange().getValues();
+      var deleted = false;
+
+      // Search bottom to top
+      for (var r = values.length - 1; r >= 1; r--) {
+        var row = values[r];
+        for (var c = 0; c < row.length; c++) {
+          var val = String(row[c]).trim();
+          if (val === targetId || (val.length > 5 && targetId.includes(val)) || (targetId.length > 5 && val.includes(targetId))) {
+            gameSheet.deleteRow(r + 1);
+            deleted = true;
+            break;
+          }
+        }
+        if (deleted) break;
+      }
+
+      // If targetId looks like a Google Drive file ID, trash the file
+      try {
+        if (targetId && targetId.length > 15 && !targetId.includes(' ')) {
+          DriveApp.getFileById(targetId).setTrashed(true);
+        }
+      } catch (_) {}
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: deleted ? 'success' : 'not_found',
+        message: deleted ? ('Media row ' + targetId + ' deleted from Game_Room_Media') : ('ID ' + targetId + ' not found in Game_Room_Media'),
+        deletedId: targetId
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
