@@ -117,6 +117,23 @@ document.addEventListener('DOMContentLoaded', () => {
     let userDatabase = {};
     let photoboothDatabase = {};
     let photoboothBackdrops = [];
+
+    // Helper: Identify if an item or ID belongs to non-user media (Developer or Photobooth tabs)
+    function isNonUserData(id, data) {
+        if (data && (data.source === 'Developer' || data.source === 'Photobooth' || data.isSceneBackdrop)) {
+            return true;
+        }
+        const sId = String(id || '').trim();
+        if (!sId) return false;
+        if (photoboothDatabase[sId] || developerDatabase[sId]) {
+            return true;
+        }
+        const norm = normalizeNfcTapCard(sId);
+        if (norm && (photoboothDatabase[norm] || developerDatabase[norm])) {
+            return true;
+        }
+        return false;
+    }
     let isTransitioning = false;
     let isAtHomeScreen = true;
     let isShowingRegistration = false;
@@ -1399,7 +1416,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `).join('');
         } else {
-            certsListHtml = `<div class="cert-empty">No tool certifications recorded yet in Neon One.<br>Attend an equipment safety walkthrough to get certified!</div>`;
+            certsListHtml = `<div class="cert-empty">No tool certifications recorded yet.<br>Attend an equipment safety walkthrough to get certified!</div>`;
         }
 
         let photosHtml = '';
@@ -1475,11 +1492,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const targetCardId = cardIdToUse
-            || (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '')
-            || lastActiveMember?.id
-            || taggedTapBands[0]?.cardId
-            || contentIdInput.value.trim();
+        const rawTargetId = cardIdToUse
+            || (!isNonUserData(currentPlayingMedia?.id, currentPlayingMedia) && !currentPlayingMedia?.isSceneBackdrop ? currentPlayingMedia?.id : '')
+            || (lastActiveMember && !isNonUserData(lastActiveMember.id, lastActiveMember) ? lastActiveMember.id : '')
+            || (taggedTapBands.find(b => !isNonUserData(b.cardId))?.cardId)
+            || '';
+        const targetCardId = isNonUserData(rawTargetId) ? '' : rawTargetId;
 
         isShowingCertifications = true;
         isShowingRegistration = false;
@@ -1892,8 +1910,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Shared Core Media Rendering & Display Helper ---
     async function renderAndDisplayMedia(data, cleanId) {
-        currentPlayingMedia = { ...data, id: cleanId };
-        lastActiveMember = { id: cleanId, displayName: data.displayName || data.title?.replace("'s Portal", '') || `Member #${cleanId}` };
+        const isBackdropOrDev = isNonUserData(cleanId, data);
+        currentPlayingMedia = { ...data, id: cleanId, isSceneBackdrop: isBackdropOrDev };
+        if (!isBackdropOrDev) {
+            lastActiveMember = { id: cleanId, displayName: data.displayName || data.title?.replace("'s Portal", '') || 'Member' };
+        }
         isShowingRegistration = false;
         isShowingCertifications = false;
         const rawPath = data.file_path || '';
@@ -2054,16 +2075,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const cleanId = String(contentId).trim();
         const normalizedId = cleanId ? normalizeNfcTapCard(cleanId) : '';
 
-        // Register attendee identity synchronously so taking a photo immediately attributes to this card
-        if (normalizedId) {
-            lastActiveMember = { id: normalizedId, displayName: `Member #${normalizedId}` };
+        // Register attendee identity synchronously only if this is NOT a backdrop or developer item
+        if (normalizedId && !isNonUserData(cleanId) && !isNonUserData(normalizedId)) {
+            lastActiveMember = { id: normalizedId, displayName: 'Member' };
             if (!taggedTapBands.some(b => b.cardId === normalizedId)) {
-                taggedTapBands.push({ cardId: normalizedId, displayName: `Member #${normalizedId}` });
+                taggedTapBands.push({ cardId: normalizedId, displayName: 'Member' });
             }
         }
 
         // If currently viewing User Profile, scanning a card immediately opens that member's profile!
-        if (cleanId && isShowingCertifications) {
+        if (cleanId && isShowingCertifications && !isNonUserData(cleanId) && !isNonUserData(normalizedId)) {
             openUserProfileScreen(normalizedId);
             return;
         }
@@ -2080,14 +2101,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            if (normalizedId) {
+            if (normalizedId && !isNonUserData(cleanId) && !isNonUserData(normalizedId)) {
                 fetchNeonOneMember(normalizedId).then(member => {
-                    const memberName = member?.preferredName || member?.firstName || member?.displayName || `Member #${normalizedId}`;
+                    const memberName = member?.preferredName || member?.firstName || member?.displayName || 'Member';
                     lastActiveMember = { id: normalizedId, displayName: memberName };
                     if (!taggedTapBands.some(b => b.cardId === normalizedId)) {
                         taggedTapBands.push({ cardId: normalizedId, displayName: memberName });
                     }
-                    currentPlayingMedia = { id: normalizedId, displayName: memberName };
+                    currentPlayingMedia = { id: normalizedId, displayName: memberName, isSceneBackdrop: false };
                     const namesList = taggedTapBands.map(b => b.displayName).join(', ');
                     showToast(`👋 Linked: ${namesList}! Press + to snap.`);
                     playBeep(920, 0.15, 0.8, 'triangle');
@@ -2428,7 +2449,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.shadowColor = 'rgba(255, 107, 0, 0.9)';
                 ctx.shadowBlur = 10;
                 ctx.textAlign = 'center';
-                ctx.fillText('PORTAL DOOR PHOTOBOOTH', width / 2, height - 35);
+                ctx.fillText('@socialmedium.space', width / 2, height - 35);
                 ctx.restore();
             }
             return;
@@ -2533,7 +2554,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.shadowColor = 'rgba(0, 210, 255, 0.9)';
             ctx.shadowBlur = 10;
             ctx.textAlign = 'center';
-            ctx.fillText('PORTAL DOOR PHOTOBOOTH', width / 2, height - 35);
+            ctx.fillText('@socialmedium.space', width / 2, height - 35);
             ctx.restore();
         }
     }
@@ -2640,7 +2661,6 @@ document.addEventListener('DOMContentLoaded', () => {
             chip.className = 'tapband-chip';
             chip.innerHTML = `
                 <span class="chip-name">${escapeHtml(band.displayName)}</span>
-                <span class="chip-id">(#${escapeHtml(band.cardId)})</span>
                 <button type="button" class="chip-remove" title="Remove" aria-label="Remove member" onclick="window.removeTaggedTapBand('${escapeHtml(band.cardId)}')">&times;</button>
             `;
             captureLinkedBandsList.appendChild(chip);
@@ -2662,6 +2682,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const cleanCard = String(rawCardId).trim();
         const normalized = normalizeNfcTapCard(cleanCard);
         if (!normalized) return;
+
+        // Never link Developer or Photobooth backdrops as user accounts
+        if (isNonUserData(cleanCard) || isNonUserData(normalized)) {
+            console.log(`[Tap Band] Ignored non-user backdrop/developer media ID: "${cleanCard}"`);
+            return;
+        }
 
         // Check if already tagged
         if (taggedTapBands.some(b => b.cardId === normalized || b.cardId === cleanCard)) {
@@ -2687,16 +2713,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 member = await fetchNeonOneMember(cleanCard);
             }
 
-            // 2. Fallback to local datasets
+            // 2. Fallback to local Users dataset only (never Developer or Photobooth tabs)
             let name = member?.displayName;
             if (!name) {
-                const local = developerDatabase[normalized] || photoboothDatabase[normalized] || userDatabase[normalized]
-                           || developerDatabase[cleanCard] || photoboothDatabase[cleanCard] || userDatabase[cleanCard];
+                const local = userDatabase[normalized] || userDatabase[cleanCard];
                 if (local?.displayName) name = local.displayName;
                 else if (local?.title) name = local.title.replace("'s Portal", '');
             }
 
-            if (!name) name = `Member #${normalized}`;
+            if (!name) name = 'Member';
 
             tempEntry.displayName = name;
             lastActiveMember = { id: normalized, displayName: name };
@@ -2847,7 +2872,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (captureSaveBtn) {
             captureSaveBtn.classList.remove('saved');
-            captureSaveBtn.textContent = '💾 Auto-saving to Google Drive...';
+            captureSaveBtn.textContent = '💾 Saving...';
             captureSaveBtn.disabled = false;
         }
 
@@ -2960,21 +2985,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     lastCapturedDataUrl = captureCanvas.toDataURL('image/jpeg', 0.92);
                 } catch (_) {}
 
+                // Filter out any backdrop or developer items from taggedTapBands
+                taggedTapBands = taggedTapBands.filter(b => b.cardId && !isNonUserData(b.cardId));
+
                 // Retain any members tagged prior to countdown (e.g. tapped before pressing +).
-                // Only if no members were pre-tagged, check currentPlayingMedia or lastActiveMember as fallback.
+                // Only if no members were pre-tagged, check genuine member fallback.
                 if (taggedTapBands.length === 0) {
-                    const fallbackMember = (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop) ? currentPlayingMedia : lastActiveMember;
-                    if (fallbackMember && fallbackMember.id && String(fallbackMember.id).length >= 4) {
+                    const fallbackMember = (!isNonUserData(currentPlayingMedia?.id, currentPlayingMedia) && !currentPlayingMedia?.isSceneBackdrop) ? currentPlayingMedia : lastActiveMember;
+                    if (fallbackMember && fallbackMember.id && !isNonUserData(fallbackMember.id, fallbackMember) && String(fallbackMember.id).length >= 4) {
                         const primaryCard = normalizeNfcTapCard(fallbackMember.id);
-                        const primaryName = fallbackMember.displayName || fallbackMember.title?.replace("'s Portal", '') || `Member #${primaryCard}`;
+                        const primaryName = fallbackMember.displayName || fallbackMember.title?.replace("'s Portal", '') || 'Member';
                         taggedTapBands.push({ cardId: primaryCard, displayName: primaryName });
                         lastActiveMember = { id: primaryCard, displayName: primaryName };
-                    } else if (contentIdInput && contentIdInput.value.trim().length >= 4) {
-                        const primaryCard = normalizeNfcTapCard(contentIdInput.value.trim());
-                        if (primaryCard && primaryCard.length >= 4) {
-                            taggedTapBands.push({ cardId: primaryCard, displayName: `Member #${primaryCard}` });
-                            lastActiveMember = { id: primaryCard, displayName: `Member #${primaryCard}` };
-                        }
                     }
                 }
                 renderTaggedTapBandsUI();
@@ -2992,7 +3014,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (captureSaveBtn) {
                     captureSaveBtn.classList.remove('saved');
-                    captureSaveBtn.textContent = '💾 Auto-saving to Google Drive...';
+                    captureSaveBtn.textContent = '💾 Saving...';
                     captureSaveBtn.disabled = true;
                 }
 
@@ -3025,7 +3047,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (captureSaveBtn) {
             captureSaveBtn.classList.remove('saved');
-            captureSaveBtn.textContent = '💾 Saving to Google Drive...';
+            captureSaveBtn.textContent = '💾 Saving...';
             captureSaveBtn.disabled = true;
         }
 
@@ -3092,11 +3114,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Collect target card IDs from tagged Tap Bands (or fallback to active media / search input / lastActiveMember)
+            // Collect target card IDs from tagged Tap Bands (or fallback to genuine active member)
+            taggedTapBands = taggedTapBands.filter(b => b.cardId && !isNonUserData(b.cardId));
             let targetCardIds = taggedTapBands.map(b => b.cardId).filter(Boolean);
             if (targetCardIds.length === 0) {
-                const fallbackId = (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '') || lastActiveMember?.id || contentIdInput.value.trim() || '';
-                if (fallbackId && String(fallbackId).length >= 4) targetCardIds.push(normalizeNfcTapCard(fallbackId));
+                const fallbackCandidate = (!isNonUserData(currentPlayingMedia?.id, currentPlayingMedia) && !currentPlayingMedia?.isSceneBackdrop ? currentPlayingMedia?.id : '') || lastActiveMember?.id || '';
+                if (fallbackCandidate && !isNonUserData(fallbackCandidate) && String(fallbackCandidate).length >= 4) {
+                    targetCardIds.push(normalizeNfcTapCard(fallbackCandidate));
+                }
             }
             if (targetCardIds.length === 0) {
                 targetCardIds.push('');
@@ -3154,18 +3179,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 isPhotoUploaded = true;
                 if (captureSaveBtn) {
                     captureSaveBtn.classList.add('saved');
-                    captureSaveBtn.textContent = '✅ Saved to Google Drive & Profile!';
+                    captureSaveBtn.textContent = '✅ Saved!';
                     captureSaveBtn.disabled = false;
                 }
-                const memberCount = targetCardIds.filter(Boolean).length;
-                showToast(`🚀 Photo saved to Google Drive & Profile!`);
+                showToast(`🚀 Photo saved!`);
                 return targetUrl;
             } else {
                 throw new Error(result.message || "Upload did not return URL");
             }
         } catch (err) {
             console.error("[v5.3] Google Drive upload error:", err);
-            showToast("⚠️ Drive Upload Error (Downloading locally)");
+            showToast("⚠️ Save error (Downloading locally)");
 
             // Fallback download using already-extracted imageData
             if (imageData) {
@@ -3285,7 +3309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         captureQrImg.src = qrUrl;
         if (captureDirectLink) {
             captureDirectLink.href = appUrl;
-            captureDirectLink.textContent = "Open in Social Medium App";
+            captureDirectLink.style.display = 'none';
         }
 
         const qrHeading = captureQrOverlay.querySelector('.qr-heading');
@@ -3321,7 +3345,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (captureDirectLink) {
             captureDirectLink.href = appUrl;
-            captureDirectLink.textContent = "Open in Social Medium App";
+            captureDirectLink.style.display = 'none';
         }
         const helpQr = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(appUrl)}`;
         if (captureQrImg) captureQrImg.src = helpQr;
