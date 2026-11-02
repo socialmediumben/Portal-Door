@@ -116,12 +116,12 @@ function readGameRoomMediaFromSheet(targetCardId, includeAll) {
       var h = String(header[i]).toLowerCase().replace(/[^a-z0-9]/g, '');
       if (h.includes('time') || h.includes('date')) timeIdx = i;
       else if (h.includes('card') || h === 'id' || h.includes('user')) cardIdx = i;
-      else if (h.includes('title') || h.includes('name')) titleIdx = i;
+      else if (h.includes('uploader') || h.includes('author') || h.includes('member')) uploaderIdx = i;
+      else if (h.includes('title') || h === 'name') titleIdx = i;
       else if (h.includes('type')) typeIdx = i;
       else if (h.includes('screen') || h.includes('target')) screenIdx = i;
       else if (h.includes('url') || h.includes('link') || h.includes('media') || h.includes('image')) urlIdx = i;
       else if (h.includes('file')) fileIdx = i;
-      else if (h.includes('uploader') || h.includes('author') || h.includes('member')) uploaderIdx = i;
       else if (h.includes('visibility') || h.includes('scope') || h.includes('private')) visIdx = i;
     }
 
