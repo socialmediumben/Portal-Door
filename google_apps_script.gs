@@ -65,9 +65,15 @@ function getGameRoomSheet(ss) {
   var sheet = ss.getSheetByName('Game_Room_Media');
   if (!sheet) {
     sheet = ss.insertSheet('Game_Room_Media');
-    sheet.appendRow(['Timestamp', 'Card_ID', 'Title', 'Type', 'Target_Screen', 'Media_URL', 'File_ID', 'Uploader_Name']);
+    sheet.appendRow(['Timestamp', 'Card_ID', 'Title', 'Type', 'Target_Screen', 'Media_URL', 'File_ID', 'Uploader_Name', 'Visibility']);
     // Format header row bold
-    sheet.getRange(1, 1, 1, 8).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, 9).setFontWeight('bold');
+  } else {
+    // Ensure 9th header column (Visibility) exists
+    var headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    if (headers.length < 9 || !String(headers[8] || '').toLowerCase().includes('visibility')) {
+      sheet.getRange(1, 9).setValue('Visibility').setFontWeight('bold');
+    }
   }
   return sheet;
 }
@@ -93,7 +99,7 @@ function renameSpreadsheetToSMAppDatabase() {
 }
 
 // Helper: Read media records from the Game_Room_Media sheet tab
-function readGameRoomMediaFromSheet(targetCardId) {
+function readGameRoomMediaFromSheet(targetCardId, includeAll) {
   var items = [];
   try {
     var ss = getSpreadsheet();
@@ -104,7 +110,7 @@ function readGameRoomMediaFromSheet(targetCardId) {
     if (!values || values.length <= 1) return items;
 
     var header = values[0];
-    var timeIdx = 0, cardIdx = 1, titleIdx = 2, typeIdx = 3, screenIdx = 4, urlIdx = 5, fileIdx = 6, uploaderIdx = 7;
+    var timeIdx = 0, cardIdx = 1, titleIdx = 2, typeIdx = 3, screenIdx = 4, urlIdx = 5, fileIdx = 6, uploaderIdx = 7, visIdx = 8;
 
     for (var i = 0; i < header.length; i++) {
       var h = String(header[i]).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -116,7 +122,10 @@ function readGameRoomMediaFromSheet(targetCardId) {
       else if (h.includes('url') || h.includes('link') || h.includes('media') || h.includes('image')) urlIdx = i;
       else if (h.includes('file')) fileIdx = i;
       else if (h.includes('uploader') || h.includes('author') || h.includes('member')) uploaderIdx = i;
+      else if (h.includes('visibility') || h.includes('scope') || h.includes('private')) visIdx = i;
     }
+
+    var cleanTarget = targetCardId ? String(targetCardId).trim() : '';
 
     for (var r = 1; r < values.length; r++) {
       var row = values[r];
@@ -126,13 +135,21 @@ function readGameRoomMediaFromSheet(targetCardId) {
       var fileId = String(row[fileIdx] || '').trim();
       var cardId = String(row[cardIdx] || '').trim();
       var timestamp = row[timeIdx] ? new Date(row[timeIdx]).toISOString() : new Date().toISOString();
+      var visibility = String(row[visIdx] || 'public').toLowerCase().trim();
+      if (!visibility || visibility !== 'private') visibility = 'public';
 
-      if (targetCardId) {
-        var cleanTarget = String(targetCardId).trim();
+      // Check card match
+      var isOwner = false;
+      if (cleanTarget) {
         var cardTokens = cardId.split(/[,;\s]+/).map(function(t){ return t.trim(); });
-        if (cardTokens.indexOf(cleanTarget) === -1 && cardId !== cleanTarget) {
-          continue;
+        if (cardTokens.indexOf(cleanTarget) !== -1 || cardId === cleanTarget) {
+          isOwner = true;
         }
+      }
+
+      // If private and not developer/all, only the owner can see it
+      if (visibility === 'private' && !isOwner && !includeAll) {
+        continue;
       }
 
       items.push({
@@ -145,6 +162,7 @@ function readGameRoomMediaFromSheet(targetCardId) {
         url: url,
         downloadUrl: fileId ? ("https://drive.google.com/uc?export=download&id=" + fileId) : url,
         uploaderName: String(row[uploaderIdx] || '').trim(),
+        visibility: visibility,
         timestamp: timestamp
       });
     }
@@ -383,7 +401,7 @@ function doGet(e) {
 
     // Check if Game Room media was requested via GET URL
     if (e && e.parameter && (e.parameter.action === 'gameroom_media' || e.parameter.action === 'get_gameroom_media' || e.parameter.tab === 'Game_Room_Media')) {
-      var grItems = readGameRoomMediaFromSheet(e.parameter.cardId);
+      var grItems = readGameRoomMediaFromSheet(e.parameter.cardId, e.parameter.all === 'true' || e.parameter.dev === 'true');
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
         count: grItems.length,
@@ -511,7 +529,7 @@ function doPost(e) {
     // ACTION 2C: LIST / QUERY GAME ROOM MEDIA
     // ==========================================
     if (data.action === 'gameroom_media' || data.action === 'get_gameroom_media') {
-      var grItems = readGameRoomMediaFromSheet(data.cardId);
+      var grItems = readGameRoomMediaFromSheet(data.cardId, data.all === true || data.dev === true);
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
         count: grItems.length,
@@ -536,6 +554,8 @@ function doPost(e) {
       var title = String(data.title || '').trim();
       var type = String(data.type || 'map').trim();
       var targetScreen = String(data.targetScreen || (type === 'map' ? 'table' : type === 'video' ? 'window' : 'frame')).trim();
+      var visibility = String(data.visibility || 'public').toLowerCase().trim();
+      if (visibility !== 'private') visibility = 'public';
       var mimeType = String(data.mimeType || 'image/jpeg').trim();
 
       var base64Data = rawFileData.replace(/^data:[^;]+;base64,/, '');
@@ -554,7 +574,7 @@ function doPost(e) {
       var file = folder.createFile(blob);
 
       if (cardIdTag) {
-        file.setDescription(cardIdTag + (uploaderName ? (' - ' + uploaderName) : ''));
+        file.setDescription(cardIdTag + (uploaderName ? (' - ' + uploaderName) : '') + ' [' + visibility + ']');
       }
 
       // Allow anyone with the link to view the file
@@ -569,7 +589,7 @@ function doPost(e) {
       var gameSheet = getGameRoomSheet(ss);
       var targetRow = getLastContentRow(gameSheet) + 1;
 
-      gameSheet.getRange(targetRow, 1, 1, 8).setNumberFormat('@').setValues([[
+      gameSheet.getRange(targetRow, 1, 1, 9).setNumberFormat('@').setValues([[
         timestampStr,
         cardIdTag,
         title,
@@ -577,7 +597,8 @@ function doPost(e) {
         targetScreen,
         finalUrl,
         file.getId(),
-        uploaderName
+        uploaderName,
+        visibility
       ]]);
 
       var createdItem = {
@@ -590,6 +611,7 @@ function doPost(e) {
         url: finalUrl,
         downloadUrl: downloadUrl,
         uploaderName: uploaderName,
+        visibility: visibility,
         timestamp: timestampStr
       };
 
@@ -600,6 +622,7 @@ function doPost(e) {
         downloadUrl: downloadUrl,
         item: createdItem
       })).setMimeType(ContentService.MimeType.JSON);
+    }
     }
 
     // ==========================================
