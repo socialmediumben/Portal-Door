@@ -623,7 +623,6 @@ function doPost(e) {
         item: createdItem
       })).setMimeType(ContentService.MimeType.JSON);
     }
-    }
 
     // ==========================================
     // ACTION 2E: DELETE GAME ROOM MEDIA FROM SHEET & DRIVE
