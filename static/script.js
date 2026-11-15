@@ -114,16 +114,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!clean) return [];
 
         const candidates = new Set();
-        candidates.add(clean);
-        candidates.add(clean.toLowerCase());
-        candidates.add(clean.toUpperCase());
 
+        // 1. Prioritize canonical decimal representations first for fast CRM matching
         const norm = normalizeNfcTapCard(clean);
         if (norm) {
             candidates.add(norm);
         }
 
-        // If it's hexadecimal (e.g. 544ca65a)
+        // If it's hexadecimal (e.g. 544ca65a), derive decimal immediately
         if (/^[0-9a-fA-F]{6,16}$/.test(clean)) {
             try {
                 const dec = parseInt(clean, 16);
@@ -157,6 +155,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (_) {}
             }
         }
+
+        // 2. Also test raw input and case variants
+        candidates.add(clean);
+        candidates.add(clean.toLowerCase());
+        candidates.add(clean.toUpperCase());
 
         // If it's a decimal number (e.g. 1414309466)
         if (/^\d+$/.test(clean)) {
@@ -1705,11 +1708,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Helper: Fetch Full Member Record from Neon One (CRM Single Source of Truth) ---
+    const neonMemberCache = new Map(); // Key: ID/Card -> { member, timestamp }
+
     async function fetchNeonOneMember(tapCard) {
         try {
             const cleanCard = String(tapCard).trim();
             if (!cleanCard) return null;
             const normalized = normalizeNfcTapCard(cleanCard);
+
+            // Check in-memory cache first (valid for 2 minutes for instant profile switching)
+            const cachedEntry = neonMemberCache.get(cleanCard) || neonMemberCache.get(normalized);
+            if (cachedEntry && (Date.now() - cachedEntry.timestamp < 120000)) {
+                return cachedEntry.member;
+            }
 
             console.log(`[Neon One] Looking up full constituent record for Tap Card "${normalized}" (raw: "${cleanCard}")...`);
             const candidates = getCandidateTapCardIds(cleanCard);
@@ -1789,7 +1800,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (!buddyAvatar) {
                 try {
-                    const localCfg = localStorage.getItem(`sm_buddy_config_${accountId}`) || localStorage.getItem(`sm_buddy_config_${normalized}`);
+                    const localCfg = localStorage.getItem(`sm_buddy_config_${accountId}`) || localStorage.getItem(`sm_buddy_config_${normalized}`) || localStorage.getItem(`sm_buddy_config_${cleanCard}`);
                     if (localCfg) {
                         buddyAvatar = JSON.parse(localCfg);
                     }
@@ -1798,38 +1809,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Extract Buddy Bucks (Field 121)
             const bbField = customFields.find(f => String(f.id) === "121" || (f.name || '').toLowerCase().includes("buddy buck"));
-            let buddyBucks = 0;
+            let buddyBucks = undefined;
             if (bbField && bbField.value !== undefined && bbField.value !== null) {
-                const num = parseInt(String(bbField.value).replace(/[^0-9]/g, ''), 10);
-                if (!isNaN(num)) buddyBucks = num;
-            } else {
+                const rawBb = String(bbField.value).trim();
+                if (rawBb !== '' && rawBb !== '-') {
+                    const num = parseInt(rawBb.replace(/[^0-9]/g, ''), 10);
+                    if (!isNaN(num) && num >= 0 && num < 1000000) buddyBucks = num;
+                }
+            }
+            if (buddyBucks === undefined) {
                 try {
-                    const localBucks = localStorage.getItem(`sm_buddy_bucks_${accountId}`) || localStorage.getItem(`sm_buddy_bucks_${normalized}`);
-                    if (localBucks) buddyBucks = parseInt(localBucks, 10) || 0;
+                    const localBucks = localStorage.getItem(`sm_buddy_bucks_${accountId}`) || localStorage.getItem(`sm_buddy_bucks_${normalized}`) || localStorage.getItem(`sm_buddy_bucks_${cleanCard}`);
+                    if (localBucks !== null) {
+                        const num = parseInt(localBucks, 10);
+                        if (!isNaN(num) && num >= 0 && num < 1000000) buddyBucks = num;
+                    }
                 } catch (_) {}
+            }
+            // Standard starter grant matching companion app
+            if (buddyBucks === undefined || isNaN(buddyBucks)) {
+                buddyBucks = 50;
             }
 
             // Extract XP (Field 122)
             const xpField = customFields.find(f => String(f.id) === "122" || (f.name || '').toLowerCase().includes("experience points") || (f.name || '').toLowerCase() === "xp");
-            let xp = 0;
+            let xp = undefined;
             if (xpField && xpField.value !== undefined && xpField.value !== null) {
-                const num = parseInt(String(xpField.value).replace(/[^0-9]/g, ''), 10);
-                if (!isNaN(num) && num < 1000000) xp = num;
-            } else {
+                const rawXp = String(xpField.value).trim();
+                if (rawXp !== '' && rawXp !== '-' && !rawXp.startsWith('{') && !rawXp.includes('"')) {
+                    const num = parseInt(rawXp.replace(/[^0-9]/g, ''), 10);
+                    if (!isNaN(num) && num >= 0 && num < 1000000) xp = num;
+                }
+            }
+            if (xp === undefined) {
                 try {
-                    const localXp = localStorage.getItem(`sm_xp_${accountId}`) || localStorage.getItem(`sm_xp_${normalized}`);
-                    if (localXp) {
+                    const localXp = localStorage.getItem(`sm_xp_${accountId}`) || localStorage.getItem(`sm_xp_${normalized}`) || localStorage.getItem(`sm_xp_${cleanCard}`);
+                    if (localXp !== null) {
                         const num = parseInt(localXp, 10);
-                        if (!isNaN(num) && num < 1000000) xp = num;
+                        if (!isNaN(num) && num >= 0 && num < 1000000) xp = num;
                     }
                 } catch (_) {}
+            }
+            // Fallback: derive starting XP from certifications (25 XP per cert) or 10 starter XP (matching companion app)
+            if (xp === undefined || isNaN(xp)) {
+                const certCount = certsList.length;
+                xp = certCount > 0 ? certCount * 25 : 10;
             }
 
             // Extract Tap Card (Field 114) to preserve official CRM serial number
             const tapCardField = customFields.find(f => String(f.id) === "114" || (f.name || '').toLowerCase() === "tap card");
             const officialCardId = tapCardField?.value ? String(tapCardField.value).trim() : (matchedCard || normalized || cleanCard);
 
-            return {
+            const memberRecord = {
                 id: officialCardId,
                 accountId: accountId,
                 title: `${displayName}'s Portal`,
@@ -1843,6 +1874,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 buddyBucks: buddyBucks,
                 xp: xp
             };
+
+            console.log(`[Neon One] Profile parsed for ${displayName} (Card: ${officialCardId}, Account: #${accountId}): XP = ${xp}, Buddy Bucks = ${buddyBucks}`);
+
+            // Cache member record across aliases
+            const cacheObj = { member: memberRecord, timestamp: Date.now() };
+            if (cleanCard) neonMemberCache.set(cleanCard, cacheObj);
+            if (normalized) neonMemberCache.set(normalized, cacheObj);
+            if (officialCardId) neonMemberCache.set(officialCardId, cacheObj);
+            if (accountId) neonMemberCache.set(String(accountId), cacheObj);
+
+            return memberRecord;
         } catch (err) {
             console.warn('[Portal-Door] Neon One lookup error:', err);
             return null;
@@ -2013,7 +2055,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            const memberPromise = (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications && currentPlayingMedia.buddyAvatar !== undefined)
+            const memberPromise = (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications && currentPlayingMedia.buddyAvatar !== undefined && currentPlayingMedia.xp !== undefined && currentPlayingMedia.buddyBucks !== undefined)
                 ? Promise.resolve(currentPlayingMedia)
                 : fetchNeonOneMember(targetCardId);
 
@@ -2067,6 +2109,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     } catch (_) {}
                 }
 
+                if (memberData.buddyBucks === undefined || isNaN(memberData.buddyBucks)) {
+                    try {
+                        const localBucks = localStorage.getItem(`sm_buddy_bucks_${targetCardId}`);
+                        if (localBucks !== null) memberData.buddyBucks = parseInt(localBucks, 10);
+                    } catch (_) {}
+                    if (memberData.buddyBucks === undefined || isNaN(memberData.buddyBucks)) {
+                        memberData.buddyBucks = 50;
+                    }
+                }
+
+                if (memberData.xp === undefined || isNaN(memberData.xp)) {
+                    try {
+                        const localXp = localStorage.getItem(`sm_xp_${targetCardId}`);
+                        if (localXp !== null) memberData.xp = parseInt(localXp, 10);
+                    } catch (_) {}
+                    if (memberData.xp === undefined || isNaN(memberData.xp)) {
+                        const certs = memberData.certifications || [];
+                        memberData.xp = certs.length > 0 ? certs.length * 25 : 10;
+                    }
+                }
+
                 // Combine backend photos with local cached photos and session captures
                 const localPhotos = getLocalPhotosForCard(targetCardId);
 
@@ -2093,11 +2156,30 @@ document.addEventListener('DOMContentLoaded', () => {
             }).catch(err => {
                 console.error("[User Profile] Error loading profile:", err);
                 const localPhotos = getLocalPhotosForCard(targetCardId);
+                let fallbackAvatar = null;
+                try {
+                    const localCfg = localStorage.getItem(`sm_buddy_config_${targetCardId}`);
+                    if (localCfg) fallbackAvatar = JSON.parse(localCfg);
+                } catch (_) {}
+                let fallbackBucks = 50;
+                try {
+                    const localBucks = localStorage.getItem(`sm_buddy_bucks_${targetCardId}`);
+                    if (localBucks !== null) fallbackBucks = parseInt(localBucks, 10) || 50;
+                } catch (_) {}
+                let fallbackXp = 10;
+                try {
+                    const localXp = localStorage.getItem(`sm_xp_${targetCardId}`);
+                    if (localXp !== null) fallbackXp = parseInt(localXp, 10) || 10;
+                } catch (_) {}
+
                 renderCertificationsScreen({
                     id: targetCardId,
                     displayName: lastActiveMember?.displayName || `Member #${targetCardId}`,
                     certifications: [],
-                    membershipStatus: 'Active Member'
+                    membershipStatus: 'Active Member',
+                    buddyAvatar: fallbackAvatar,
+                    buddyBucks: fallbackBucks,
+                    xp: fallbackXp
                 }, localPhotos);
             });
         } else {
@@ -2615,7 +2697,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!taggedTapBands.some(b => b.cardId === normalizedId)) {
                         taggedTapBands.push({ cardId: normalizedId, displayName: memberName });
                     }
-                    currentPlayingMedia = { id: normalizedId, displayName: memberName, isSceneBackdrop: false };
+                    currentPlayingMedia = {
+                        ...(member || {}),
+                        id: normalizedId,
+                        displayName: memberName,
+                        isSceneBackdrop: false
+                    };
                     const namesList = taggedTapBands.map(b => b.displayName).join(', ');
                     showToast(`👋 Linked: ${namesList}! Press + to snap.`);
                     playBeep(920, 0.15, 0.8, 'triangle');
