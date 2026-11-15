@@ -196,13 +196,13 @@ function setupBuddyArtSchema() {
   var sheet = ss.getSheetByName('Buddy_Items');
   if (!sheet) {
     sheet = ss.insertSheet('Buddy_Items');
-    sheet.appendRow(['Name', 'Category', 'Price', 'Asset_URL', 'Z_Index', 'Description', 'Active', 'Artist']);
-    sheet.getRange(1, 1, 1, 8).setFontWeight('bold');
-    Logger.log("Created Buddy_Items sheet with Artist column.");
+    sheet.appendRow(['Name', 'Category', 'Price', 'Asset_URL', 'Description', 'Active', 'Artist']);
+    sheet.getRange(1, 1, 1, 7).setFontWeight('bold');
+    Logger.log("Created Buddy_Items sheet without Z_Index.");
     return;
   }
   
-  var headerValues = sheet.getRange(1, 1, 1, sheet.getLastColumn() || 7).getValues()[0];
+  var headerValues = sheet.getRange(1, 1, 1, sheet.getLastColumn() || 6).getValues()[0];
   var artistFound = false;
   for (var h = 0; h < headerValues.length; h++) {
     var hName = String(headerValues[h]).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -508,38 +508,41 @@ function doPost(e) {
       var sheet = ss.getSheetByName('Buddy_Items');
       if (!sheet) {
         sheet = ss.insertSheet('Buddy_Items');
-        sheet.appendRow(['Name', 'Category', 'Price', 'Asset_URL', 'Z_Index', 'Description', 'Active', 'Artist']);
-        sheet.getRange(1, 1, 1, 8).setFontWeight('bold');
+        sheet.appendRow(['Name', 'Category', 'Price', 'Asset_URL', 'Description', 'Active', 'Artist']);
+        sheet.getRange(1, 1, 1, 7).setFontWeight('bold');
       }
 
-      // Check header to ensure "Artist" column exists
-      var headerValues = sheet.getRange(1, 1, 1, sheet.getLastColumn() || 7).getValues()[0];
-      var artistColIdx = -1;
+      // Check header columns dynamically so it matches whether Z_Index is present or deleted
+      var headerValues = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+      var hasArtist = false;
       for (var h = 0; h < headerValues.length; h++) {
         var hName = String(headerValues[h]).toLowerCase().replace(/[^a-z0-9]/g, '');
         if (hName === 'artist') {
-          artistColIdx = h;
+          hasArtist = true;
           break;
         }
       }
-      if (artistColIdx === -1) {
-        artistColIdx = headerValues.length;
-        sheet.getRange(1, artistColIdx + 1).setValue('Artist').setFontWeight('bold');
+      if (!hasArtist) {
+        var artistColIdx = headerValues.length + 1;
+        sheet.getRange(1, artistColIdx).setValue('Artist').setFontWeight('bold');
+        headerValues.push('Artist');
       }
 
-      // Append row with 'Pending' in Active column so admin can approve before it goes live!
-      var newRow = [
-        name,
-        category,
-        price,
-        directUrl,
-        zIndex,
-        description,
-        'Pending',
-        artist
-      ];
+      // Build row data based on detected header positions
+      var rowData = new Array(headerValues.length).fill('');
+      for (var c = 0; c < headerValues.length; c++) {
+        var colKey = String(headerValues[c]).toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (colKey.includes('name') || colKey.includes('title')) rowData[c] = name;
+        else if (colKey.includes('cat') || colKey.includes('type')) rowData[c] = category;
+        else if (colKey.includes('price') || colKey.includes('buck') || colKey.includes('bb')) rowData[c] = price;
+        else if (colKey.includes('url') || colKey.includes('asset') || colKey.includes('image')) rowData[c] = directUrl;
+        else if (colKey.includes('desc')) rowData[c] = description;
+        else if (colKey.includes('active') || colKey.includes('status')) rowData[c] = 'Pending';
+        else if (colKey.includes('artist') || colKey.includes('creator') || colKey.includes('author')) rowData[c] = artist;
+        // Z_Index is left blank if present, or omitted if removed
+      }
 
-      sheet.appendRow(newRow);
+      sheet.appendRow(rowData);
 
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
