@@ -466,6 +466,82 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1800);
     }
 
+        // --- Remote Settings 2-Way Synchronization with Neon Kiosk & Social Medium App ---
+    let isApplyingRemotePortalSettings = false;
+    let lastPortalSettingsHash = "";
+
+    async function pushPortalDoorSettingsToBackend() {
+        if (isApplyingRemotePortalSettings) return;
+        try {
+            const payload = {
+                contestMode: Boolean(isCostumeContestMode),
+                digitalBackground: Boolean(isAiBgRemovalEnabled),
+                sound: !Boolean(isMuted),
+                photoboothMode: Boolean(isPhotoboothActive),
+                updatedBy: "door"
+            };
+            lastPortalSettingsHash = JSON.stringify(payload);
+            await fetch(NEON_PROXY_URL + "/api/portal-door/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            console.log("[Portal-Door] Pushed live door settings to cloud proxy:", payload);
+        } catch (err) {
+            console.warn("[Portal-Door] Failed to push settings to backend:", err.message);
+        }
+    }
+
+    async function syncPortalDoorSettingsFromBackend() {
+        try {
+            const res = await fetch(NEON_PROXY_URL + "/api/portal-door/settings?_t=" + Date.now());
+            if (!res.ok) return;
+            const data = await res.json();
+            const settings = data.settings;
+            if (!settings) return;
+
+            const newHash = JSON.stringify({
+                contestMode: settings.contestMode,
+                digitalBackground: settings.digitalBackground,
+                sound: settings.sound,
+                photoboothMode: settings.photoboothMode
+            });
+
+            if (newHash === lastPortalSettingsHash) return;
+            lastPortalSettingsHash = newHash;
+
+            isApplyingRemotePortalSettings = true;
+
+            // 1. Contest Mode
+            if (typeof settings.contestMode === "boolean" && settings.contestMode !== isCostumeContestMode) {
+                toggleCostumeContest(settings.contestMode);
+            }
+
+            // 2. Digital Background vs Physical Background
+            if (typeof settings.digitalBackground === "boolean" && settings.digitalBackground !== isAiBgRemovalEnabled) {
+                toggleBgRemoval(settings.digitalBackground);
+            }
+
+            // 3. Sound (sound: true -> isMuted: false)
+            if (typeof settings.sound === "boolean") {
+                const targetMuted = !settings.sound;
+                if (targetMuted !== isMuted) {
+                    toggleSound(targetMuted);
+                }
+            }
+
+            // 4. Photobooth Mode
+            if (typeof settings.photoboothMode === "boolean" && settings.photoboothMode !== isPhotoboothActive) {
+                togglePhotobooth(settings.photoboothMode);
+            }
+
+            console.log("[Portal-Door] Synchronized remote developer settings from cloud proxy:", settings);
+        } catch (_) {
+        } finally {
+            isApplyingRemotePortalSettings = false;
+        }
+    }
+
     // --- Digital Background vs Physical Background Management ---
     function updateBgRemovalUI() {
         if (!bgRemovalToggleBtn) return;
@@ -506,6 +582,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('🎃 Physical Background (Party Mode)');
         }
         console.log(`[v8.0] Background mode toggled: ${isAiBgRemovalEnabled ? 'DIGITAL_BACKGROUND' : 'PHYSICAL_BACKGROUND'}`);
+        if (!isApplyingRemotePortalSettings) { pushPortalDoorSettingsToBackend(); }
     }
 
     if (bgRemovalToggleBtn) {
@@ -550,6 +627,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCostumeContestUI();
         showToast(isCostumeContestMode ? '🏆 Costume Contest Mode: ON' : '🏆 Costume Contest Mode: OFF');
         console.log(`[v7.8] Costume Contest Mode set to: ${isCostumeContestMode}`);
+        if (!isApplyingRemotePortalSettings) { pushPortalDoorSettingsToBackend(); }
     }
 
     if (costumeContestToggleBtn) {
@@ -626,6 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         showToast(isMuted ? '🔇 Sound: OFF' : '🔊 Sound: ON');
         console.log(`[v5.1] Audio toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
+        if (!isApplyingRemotePortalSettings) { pushPortalDoorSettingsToBackend(); }
     }
 
     // --- Fullscreen Toggle ---
@@ -3428,6 +3507,7 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaTitle.classList.add('visible');
         try {
             const ok = await loadMediaDatabase();
+
             mediaTitle.textContent = ok ? "Data Refreshed! 🔄" : "Refresh Failed!";
             showToast(ok ? '✅ Portal Data Refreshed' : '⚠️ Refresh Failed');
         } catch (e) {
@@ -3836,6 +3916,10 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCostumeContestUI();
     showHomeScreen();
     loadMediaDatabase();
+
+    // Remote Developer Settings 2-Way Sync with Neon Kiosk & Social Medium App
+    syncPortalDoorSettingsFromBackend();
+    setInterval(syncPortalDoorSettingsFromBackend, 3000);
 
     // Warm up MediaPipe Multi-Person Segmentation in background after short delay so first webcam toggle doesn't lag
     setTimeout(() => {
