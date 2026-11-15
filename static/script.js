@@ -90,13 +90,98 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!isNaN(dec)) return dec.toString();
         }
 
-        // 4. 8-hex character string (e.g. Portal Door reader "54dae65a")
-        if (/^[0-9a-fA-F]{8}$/.test(clean)) {
+        // 4. 7 or 8-hex character string (e.g. Portal Door reader "544ca65a" or "54dae65a")
+        if (/^[0-9a-fA-F]{7,8}$/.test(clean)) {
             const dec = parseInt(clean, 16);
             if (!isNaN(dec)) return dec.toString();
         }
 
+        // 5. Generic hex string up to 16 characters
+        if (/^[0-9a-fA-F]{6,16}$/.test(clean)) {
+            try {
+                const dec = parseInt(clean, 16);
+                if (!isNaN(dec)) return dec.toString();
+            } catch (_) {}
+        }
+
         return clean;
+    }
+
+    // Returns all viable cross-representation candidate IDs (raw, decimal, hex, reversed-byte endianness) for CRM search
+    function getCandidateTapCardIds(raw) {
+        if (!raw) return [];
+        const clean = String(raw).trim();
+        if (!clean) return [];
+
+        const candidates = new Set();
+        candidates.add(clean);
+        candidates.add(clean.toLowerCase());
+        candidates.add(clean.toUpperCase());
+
+        const norm = normalizeNfcTapCard(clean);
+        if (norm) {
+            candidates.add(norm);
+        }
+
+        // If it's hexadecimal (e.g. 544ca65a)
+        if (/^[0-9a-fA-F]{6,16}$/.test(clean)) {
+            try {
+                const dec = parseInt(clean, 16);
+                if (!isNaN(dec)) candidates.add(dec.toString());
+            } catch (_) {}
+
+            if (/^[0-9a-fA-F]{7,8}$/.test(clean)) {
+                try {
+                    const pad = clean.padStart(8, '0');
+                    const b0 = pad.substring(0, 2);
+                    const b1 = pad.substring(2, 4);
+                    const b2 = pad.substring(4, 6);
+                    const b3 = pad.substring(6, 8);
+                    const rev = parseInt(b3 + b2 + b1 + b0, 16);
+                    if (!isNaN(rev)) candidates.add(rev.toString());
+                } catch (_) {}
+            }
+
+            if (/^[0-9a-fA-F]{14}$/.test(clean)) {
+                try {
+                    const b0 = clean.substring(0, 2);
+                    const b1 = clean.substring(2, 4);
+                    const b2 = clean.substring(4, 6);
+                    const b3 = clean.substring(6, 8);
+                    const decRev = parseInt(b3 + b2 + b1 + b0, 16);
+                    if (!isNaN(decRev)) candidates.add(decRev.toString());
+                    const decDir = parseInt(b0 + b1 + b2 + b3, 16);
+                    if (!isNaN(decDir)) candidates.add(decDir.toString());
+                    const fullBigInt = BigInt('0x' + clean).toString();
+                    candidates.add(fullBigInt);
+                } catch (_) {}
+            }
+        }
+
+        // If it's a decimal number (e.g. 1414309466)
+        if (/^\d+$/.test(clean)) {
+            try {
+                const num = Number(clean);
+                if (!isNaN(num) && num < 0xFFFFFFFF) {
+                    const hex8 = num.toString(16).padStart(8, '0');
+                    candidates.add(hex8.toLowerCase());
+                    candidates.add(hex8.toUpperCase());
+
+                    const b0 = hex8.substring(0, 2);
+                    const b1 = hex8.substring(2, 4);
+                    const b2 = hex8.substring(4, 6);
+                    const b3 = hex8.substring(6, 8);
+                    const revHex = b3 + b2 + b1 + b0;
+                    candidates.add(revHex.toLowerCase());
+                    candidates.add(revHex.toUpperCase());
+
+                    const revDec = parseInt(revHex, 16);
+                    if (!isNaN(revDec)) candidates.add(revDec.toString());
+                }
+            } catch (_) {}
+        }
+
+        return Array.from(candidates);
     }
 
     // Google Sheet CSV export base URL (spreadsheets/d/1vwXuw-TBYxUXKXUSipa2drArRNXZuKNwbXFhxcVbIc0)
@@ -1602,34 +1687,34 @@ document.addEventListener('DOMContentLoaded', () => {
             const normalized = normalizeNfcTapCard(cleanCard);
 
             console.log(`[Neon One] Looking up full constituent record for Tap Card "${normalized}" (raw: "${cleanCard}")...`);
-            let searchRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/search`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    searchFields: [{ field: 'Tap Card', operator: 'EQUAL', value: normalized }],
-                    outputFields: ['Account ID'],
-                    pagination: { currentPage: 0, pageSize: 1 }
-                })
-            });
+            const candidates = getCandidateTapCardIds(cleanCard);
+            console.log(`[Neon One] Looking up full constituent record for Tap Card candidates:`, candidates);
 
-            let searchData = searchRes.ok ? await searchRes.json() : null;
-            let accountId = searchData?.searchResults?.[0]?.['Account ID'];
+            let accountId = null;
+            let matchedCard = null;
 
-            // Fallback: if not found with normalized decimal and normalized differs from cleanCard, try raw cleanCard
-            if (!accountId && normalized !== cleanCard) {
-                const fallbackRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/search`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        searchFields: [{ field: 'Tap Card', operator: 'EQUAL', value: cleanCard }],
-                        outputFields: ['Account ID'],
-                        pagination: { currentPage: 0, pageSize: 1 }
-                    })
-                });
-                if (fallbackRes.ok) {
-                    const fallbackData = await fallbackRes.json();
-                    accountId = fallbackData?.searchResults?.[0]?.['Account ID'];
-                }
+            for (const cand of candidates) {
+                try {
+                    const searchRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/search`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            searchFields: [{ field: 'Tap Card', operator: 'EQUAL', value: cand }],
+                            outputFields: ['Account ID'],
+                            pagination: { currentPage: 0, pageSize: 1 }
+                        })
+                    });
+                    if (searchRes.ok) {
+                        const searchData = await searchRes.json();
+                        const foundId = searchData?.searchResults?.[0]?.['Account ID'];
+                        if (foundId) {
+                            accountId = foundId;
+                            matchedCard = cand;
+                            console.log(`[Neon One] Found Account #${accountId} matching Tap Card candidate "${cand}"!`);
+                            break;
+                        }
+                    }
+                } catch (_) {}
             }
 
             if (!accountId) return null;
@@ -1715,8 +1800,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (_) {}
             }
 
+            // Extract Tap Card (Field 114) to preserve official CRM serial number
+            const tapCardField = customFields.find(f => String(f.id) === "114" || (f.name || '').toLowerCase() === "tap card");
+            const officialCardId = tapCardField?.value ? String(tapCardField.value).trim() : (matchedCard || normalized || cleanCard);
+
             return {
-                id: normalized,
+                id: officialCardId,
                 accountId: accountId,
                 title: `${displayName}'s Portal`,
                 type: mediaType,
@@ -4077,6 +4166,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        // Hex / Alphanumeric / Digits (0-9, a-f, A-F): Automatically route keystrokes into search bar
+        if (/^[0-9a-fA-F]$/i.test(event.key)) {
+            if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
+                event.preventDefault();
+                contentIdInput.value += event.key;
+            }
+            return;
+        }
+
         // Hotkey: + (plus / add) starts Photobooth Photo Countdown & Capture
         if (event.key === '+' || event.code === 'NumpadAdd') {
             event.preventDefault();
@@ -4093,8 +4191,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Hotkey: C toggles Costume Contest Mode
-        if (event.key === 'c' || event.key === 'C') {
+        // Hotkey: Shift+C toggles Costume Contest Mode (Shift required so 'c' in hex NFC card scans is not intercepted)
+        if ((event.key === 'c' || event.key === 'C') && (event.shiftKey || event.ctrlKey)) {
             if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
                 event.preventDefault();
                 toggleCostumeContest();
@@ -4156,14 +4254,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Hex / Alphanumeric / Digits (0-9, a-f, A-F): Automatically route keystrokes into search bar
-        if (/^[0-9a-fA-F]$/i.test(event.key)) {
-            if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
-                event.preventDefault();
-                contentIdInput.value += event.key;
-            }
-            return;
-        }
+
 
         // Prevent other non-hex special characters if contentIdInput is focused (except control keys)
         if (document.activeElement === contentIdInput && event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
