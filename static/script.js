@@ -2022,19 +2022,23 @@ document.addEventListener('DOMContentLoaded', () => {
             || '';
         const targetCardId = isNonUserData(rawTargetId) ? '' : rawTargetId;
 
+        // If no user is tapped in, do not enter Profile Mode at all (ignore '/' button)
+        if (!targetCardId) {
+            return;
+        }
+
         isShowingCertifications = true;
         isShowingRegistration = false;
         updatePhotoboothVisibility();
 
-        if (targetCardId) {
-            mediaDisplay.innerHTML = `
-                <div class="certifications-container">
-                    <span class="cert-badge">USER PROFILE • MEMBER PASSPORT</span>
-                    <h2 class="cert-title">Loading User Profile...</h2>
-                    <div class="reg-id-box">Card #${escapeHtml(targetCardId)}</div>
-                    <div class="capture-spinner" style="margin: 20px auto;"></div>
-                </div>
-            `;
+        mediaDisplay.innerHTML = `
+            <div class="certifications-container">
+                <span class="cert-badge">USER PROFILE • MEMBER PASSPORT</span>
+                <h2 class="cert-title">Loading User Profile...</h2>
+                <div class="reg-id-box">Card #${escapeHtml(targetCardId)}</div>
+                <div class="capture-spinner" style="margin: 20px auto;"></div>
+            </div>
+        `;
 
             const memberPromise = (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications && currentPlayingMedia.buddyAvatar !== undefined && currentPlayingMedia.xp !== undefined && currentPlayingMedia.buddyBucks !== undefined)
                 ? Promise.resolve(currentPlayingMedia)
@@ -2163,28 +2167,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     xp: fallbackXp
                 }, localPhotos);
             });
-        } else {
-            // No member scanned yet: check if there are captures from this session
-            const sessionPhotos = getLocalPhotosForCard('');
-            if (sessionPhotos.length > 0 || lastUploadedPhotoUrl || lastCapturedDataUrl) {
-                const guestPhotos = [...sessionPhotos];
-                if (lastUploadedPhotoUrl && !guestPhotos.some(p => p.url === lastUploadedPhotoUrl)) {
-                    guestPhotos.unshift({ url: lastUploadedPhotoUrl, timestamp: new Date().toISOString() });
-                } else if (lastCapturedDataUrl && guestPhotos.length === 0) {
-                    guestPhotos.unshift({ url: lastCapturedDataUrl, timestamp: new Date().toISOString() });
-                }
-                renderCertificationsScreen({
-                    id: 'Session',
-                    displayName: 'Photobooth Session Captures',
-                    certifications: [],
-                    membershipStatus: 'Tap Band to Link'
-                }, guestPhotos);
-            } else {
-                mediaTitle.textContent = "Scan a Tap Card to view User Profile";
-                mediaTitle.classList.add('visible');
-                setTimeout(() => mediaTitle.classList.remove('visible'), 2500);
-            }
-        }
     }
 
     // --- PHOTOBOOTH MEDIA OPTIONS GALLERY MODAL ---
@@ -4072,11 +4054,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // Slash / NumpadDivide: Opens User Profile with Certifications & Recent Photos
             if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash') {
                 event.preventDefault();
+                const rawTargetId = taggedTapBands[0]?.cardId || lastActiveMember?.id || (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '');
+                const targetId = isNonUserData(rawTargetId) ? '' : rawTargetId;
+                if (!targetId) {
+                    return; // Ignore '/' button push when no user is tapped in
+                }
                 if (backdropDebounceTimer) {
                     clearTimeout(backdropDebounceTimer);
                     backdropDebounceTimer = null;
                 }
-                const targetId = taggedTapBands[0]?.cardId || lastActiveMember?.id || (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '') || contentIdInput.value.trim();
                 if (!isPhotoUploaded && !isUploadingPhoto) {
                     uploadCaptureToGoogleDrive();
                 }
@@ -4323,7 +4309,20 @@ document.addEventListener('DOMContentLoaded', () => {
         // Hotkey: / toggles User Profile Screen (Certifications & Recent Photos within 30 days)
         if (event.key === '/' || event.code === 'NumpadDivide' || event.code === 'Slash') {
             event.preventDefault();
-            openUserProfileScreen();
+            // If already viewing profile, allow '/' to toggle back to media or home
+            if (isShowingCertifications) {
+                openUserProfileScreen();
+                return;
+            }
+            const rawTargetId = (!isNonUserData(currentPlayingMedia?.id, currentPlayingMedia) && !currentPlayingMedia?.isSceneBackdrop ? currentPlayingMedia?.id : '')
+                || (lastActiveMember && !isNonUserData(lastActiveMember.id, lastActiveMember) ? lastActiveMember.id : '')
+                || (taggedTapBands.find(b => !isNonUserData(b.cardId))?.cardId)
+                || '';
+            const targetId = isNonUserData(rawTargetId) ? '' : rawTargetId;
+            if (!targetId) {
+                return; // Ignore '/' button push when no user is tapped in
+            }
+            openUserProfileScreen(targetId);
             return;
         }
 
@@ -4397,7 +4396,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (captureProfileBtn) {
         captureProfileBtn.addEventListener('click', () => {
-            const targetId = taggedTapBands[0]?.cardId || lastActiveMember?.id || (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '') || contentIdInput.value.trim();
+            const rawTargetId = taggedTapBands[0]?.cardId || lastActiveMember?.id || (currentPlayingMedia && !currentPlayingMedia.isSceneBackdrop ? currentPlayingMedia.id : '');
+            const targetId = isNonUserData(rawTargetId) ? '' : rawTargetId;
+            if (!targetId) {
+                return; // Ignore when no user is tapped in
+            }
             if (!isPhotoUploaded && !isUploadingPhoto) {
                 uploadCaptureToGoogleDrive();
             }
