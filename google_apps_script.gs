@@ -190,6 +190,35 @@ function testAuthorization() {
   Logger.log("Authorization Successful! Connected to Sheet: " + ss.getName() + " | Tabs: " + sheet.getName() + ", " + gameSheet.getName());
 }
 
+// Helper to ensure the "Artist" column exists on the "Buddy_Items" tab in Google Sheets
+function setupBuddyArtSchema() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName('Buddy_Items');
+  if (!sheet) {
+    sheet = ss.insertSheet('Buddy_Items');
+    sheet.appendRow(['Name', 'Category', 'Price', 'Asset_URL', 'Z_Index', 'Description', 'Active', 'Artist']);
+    sheet.getRange(1, 1, 1, 8).setFontWeight('bold');
+    Logger.log("Created Buddy_Items sheet with Artist column.");
+    return;
+  }
+  
+  var headerValues = sheet.getRange(1, 1, 1, sheet.getLastColumn() || 7).getValues()[0];
+  var artistFound = false;
+  for (var h = 0; h < headerValues.length; h++) {
+    var hName = String(headerValues[h]).toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (hName === 'artist') {
+      artistFound = true;
+      break;
+    }
+  }
+  if (!artistFound) {
+    sheet.getRange(1, headerValues.length + 1).setValue('Artist').setFontWeight('bold');
+    Logger.log("Successfully added 'Artist' column to Buddy_Items tab!");
+  } else {
+    Logger.log("'Artist' column already exists in Buddy_Items tab.");
+  }
+}
+
 // Function to automatically import all photos from a Google Drive folder into the "Photobooth_Photos" sheet tab
 function importPhotosFromAlbum(folderId, targetCardId) {
   if (!folderId) folderId = '16piBJbrJu3wpUfR3JD2_tjQHI_Uw_z0D'; // Album provided by user
@@ -429,6 +458,100 @@ function doGet(e) {
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
+
+    // ==========================================
+    // ACTION: UPLOAD BUDDY ART TO GOOGLE DRIVE & "Buddy_Items" SHEET
+    // ==========================================
+    if (data.action === 'upload_buddy_art') {
+      var folderId = data.folderId || '1TCPHSaRO-_R-dT_cKazSeE4nxGyVxiQU';
+      var folder;
+      try {
+        folder = DriveApp.getFolderById(folderId);
+      } catch (fErr) {
+        var fIter = DriveApp.getFoldersByName('Buddy Art Uploads');
+        folder = fIter.hasNext() ? fIter.next() : DriveApp.createFolder('Buddy Art Uploads');
+      }
+
+      var name = String(data.name || 'Custom Buddy Art').trim();
+      var category = String(data.category || 'props').trim().toLowerCase();
+      var description = String(data.description || '').trim();
+      var artist = String(data.artist || '').trim();
+      var price = parseInt(data.price, 10) || 0;
+      var zIndex = parseInt(data.zIndex, 10) || 50;
+
+      if (!data.image) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          message: 'No image data provided.'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      var base64Data = data.image.replace(/^data:image\/(png|jpeg|webp);base64,/, "");
+      var imageBytes = Utilities.base64Decode(base64Data);
+      var safeFileName = (name.replace(/[^a-zA-Z0-9_-]/g, '_') || 'buddy_art') + '_' + new Date().getTime() + '.png';
+      var blob = Utilities.newBlob(imageBytes, 'image/png', safeFileName);
+
+      var file = folder.createFile(blob);
+      if (description || artist) {
+        file.setDescription((artist ? ('Artist: ' + artist + ' | ') : '') + description);
+      }
+      try {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (_) {}
+
+      var directUrl = "https://lh3.googleusercontent.com/d/" + file.getId();
+      var downloadUrl = "https://drive.google.com/uc?export=download&id=" + file.getId();
+
+      // Log to "Buddy_Items" tab in Google Sheets
+      var ss = getSpreadsheet();
+      var sheet = ss.getSheetByName('Buddy_Items');
+      if (!sheet) {
+        sheet = ss.insertSheet('Buddy_Items');
+        sheet.appendRow(['Name', 'Category', 'Price', 'Asset_URL', 'Z_Index', 'Description', 'Active', 'Artist']);
+        sheet.getRange(1, 1, 1, 8).setFontWeight('bold');
+      }
+
+      // Check header to ensure "Artist" column exists
+      var headerValues = sheet.getRange(1, 1, 1, sheet.getLastColumn() || 7).getValues()[0];
+      var artistColIdx = -1;
+      for (var h = 0; h < headerValues.length; h++) {
+        var hName = String(headerValues[h]).toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (hName === 'artist') {
+          artistColIdx = h;
+          break;
+        }
+      }
+      if (artistColIdx === -1) {
+        artistColIdx = headerValues.length;
+        sheet.getRange(1, artistColIdx + 1).setValue('Artist').setFontWeight('bold');
+      }
+
+      // Append row with 'Pending' in Active column so admin can approve before it goes live!
+      var newRow = [
+        name,
+        category,
+        price,
+        directUrl,
+        zIndex,
+        description,
+        'Pending',
+        artist
+      ];
+
+      sheet.appendRow(newRow);
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Art uploaded to Google Drive and logged in spreadsheet as Pending!',
+        name: name,
+        category: category,
+        artist: artist,
+        active: 'Pending',
+        fileId: file.getId(),
+        url: directUrl,
+        downloadUrl: downloadUrl
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
 
     // ==========================================
     // ACTION: IMPORT ALL PHOTOS FROM GOOGLE DRIVE FOLDER
