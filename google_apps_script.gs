@@ -473,11 +473,12 @@ function doPost(e) {
       }
 
       var name = String(data.name || 'Custom Buddy Art').trim();
-      var category = String(data.category || 'props').trim().toLowerCase();
+      // Category, Price, and Z_Index are left blank for the admin to configure directly in the spreadsheet
+      var category = String(data.category || '').trim();
       var description = String(data.description || '').trim();
       var artist = String(data.artist || '').trim();
-      var price = parseInt(data.price, 10) || 0;
-      var zIndex = parseInt(data.zIndex, 10) || 50;
+      var price = (data.price !== undefined && data.price !== null && data.price !== '') ? data.price : '';
+      var zIndex = (data.zIndex !== undefined && data.zIndex !== null && data.zIndex !== '') ? data.zIndex : '';
 
       if (!data.image) {
         return ContentService.createTextOutput(JSON.stringify({
