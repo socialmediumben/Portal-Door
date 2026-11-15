@@ -141,6 +141,254 @@ document.addEventListener('DOMContentLoaded', () => {
     let isMuted = false; // Default sound ON as requested
     let soundToastTimeout = null;
 
+    // --- Central Buddy Mascot Catalog & Layer Order ---
+    const BUDDY_COLOR_MAP = {
+        cyan: '#3bc0cd',
+        orange: '#f16622',
+        navy: '#344ea2',
+        'dark-blue': '#344ea2',
+        white: '#ffffff',
+        green: '#8a9280',
+        purple: '#8b5cf6',
+        yellow: '#fbbf24',
+        pink: '#f43f5e',
+        slate: '#64748b',
+        emerald: '#10b981',
+        lavender: '#c084fc',
+        ruby: '#dc2626',
+        amber: '#f59e0b',
+        teal: '#0d9488',
+        charcoal: '#334155',
+        bubblegum: '#f472b6',
+        lime: '#84cc16',
+        indigo: '#6366f1'
+    };
+
+    const BUDDY_CATEGORY_LAYER_ORDER = {
+        capes: 20,
+        base_body: 30,
+        mouth: 40,
+        expression: 45,
+        tops: 60,
+        bottoms: 65,
+        shoes: 70,
+        face_accessory: 80,
+        headwear: 90,
+        hair: 95,
+        props: 110
+    };
+
+    const MAKER_XP_LEVEL_TIERS = [
+        { level: 1, title: 'Novice Maker', minXp: 0, badgeEmoji: '🌱' },
+        { level: 2, title: 'Apprentice Tinkerer', minXp: 50, badgeEmoji: '🔨' },
+        { level: 3, title: 'Craftsperson', minXp: 125, badgeEmoji: '⚙️' },
+        { level: 4, title: 'Journeyman Builder', minXp: 250, badgeEmoji: '🧰' },
+        { level: 5, title: 'Artisan Specialist', minXp: 450, badgeEmoji: '🎨' },
+        { level: 6, title: 'Senior Fabricator', minXp: 700, badgeEmoji: '🚀' },
+        { level: 7, title: 'Master Engineer', minXp: 1000, badgeEmoji: '⚡' },
+        { level: 8, title: 'Visionary Inventor', minXp: 1400, badgeEmoji: '💡' },
+        { level: 9, title: 'Mythic Artificer', minXp: 1850, badgeEmoji: '🔮' },
+        { level: 10, title: 'Grandmaster Architect', minXp: 2400, badgeEmoji: '👑' }
+    ];
+
+    let buddyDatabase = {
+        'sheet_1_basic_buddy': { id: 'sheet_1_basic_buddy', name: 'Basic Buddy', category: 'base_body', assetUrl: 'static/buddies/basic_buddy.png', zIndex: 30 },
+        'sheet_21_closed_smile': { id: 'sheet_21_closed_smile', name: 'Closed Smile', category: 'mouth', assetUrl: 'static/buddies/closed_smile.png', zIndex: 40 },
+        'sheet_4_closed_smile': { id: 'sheet_4_closed_smile', name: 'Closed Smile', category: 'mouth', assetUrl: 'static/buddies/closed_smile.png', zIndex: 40 },
+        'sheet_13_open_mouth': { id: 'sheet_13_open_mouth', name: 'Open Mouth', category: 'mouth', assetUrl: 'static/buddies/open_mouth.png', zIndex: 40 },
+        'sheet_2_flower': { id: 'sheet_2_flower', name: 'Blossom Flower', category: 'headwear', assetUrl: 'static/buddies/flower.png', zIndex: 90 },
+        'sheet_3_cat_ears': { id: 'sheet_3_cat_ears', name: 'Cat Ears Headband', category: 'headwear', assetUrl: 'static/buddies/cat_ears.png', zIndex: 90 },
+        'sheet_5_cyborg_face': { id: 'sheet_5_cyborg_face', name: 'Cyborg Visor', category: 'headwear', assetUrl: 'static/buddies/cyborg_face.png', zIndex: 90 },
+        'sheet_6_bow_tie': { id: 'sheet_6_bow_tie', name: 'Dapper Bow Tie', category: 'tops', assetUrl: 'static/buddies/bow_tie.png', zIndex: 60 },
+        'sheet_7_dragon': { id: 'sheet_7_dragon', name: 'Dragon Companion', category: 'props', assetUrl: 'static/buddies/dragon.png', zIndex: 110 },
+        'sheet_8_game_controller': { id: 'sheet_8_game_controller', name: 'Game Controller', category: 'props', assetUrl: 'static/buddies/game_controller.png', zIndex: 110 },
+        'sheet_9_laser_pointer': { id: 'sheet_9_laser_pointer', name: 'Laser Pointer', category: 'props', assetUrl: 'static/buddies/laser_pointer.png', zIndex: 110 },
+        'sheet_10_magical_girl_hair': { id: 'sheet_10_magical_girl_hair', name: 'Magical Girl Hair', category: 'headwear', assetUrl: 'static/buddies/magical_girl_hair.png', zIndex: 90 },
+        'sheet_11_witch_hat': { id: 'sheet_11_witch_hat', name: 'Magical Hat', category: 'headwear', assetUrl: 'static/buddies/witch_hat.png', zIndex: 90 },
+        'sheet_12_mic_stand': { id: 'sheet_12_mic_stand', name: 'Microphone', category: 'props', assetUrl: 'static/buddies/mic_stand.png', zIndex: 110 },
+        'sheet_14_robot': { id: 'sheet_14_robot', name: 'Robot Companion', category: 'props', assetUrl: 'static/buddies/robot.png', zIndex: 110 },
+        'sheet_15_robot_arm': { id: 'sheet_15_robot_arm', name: 'Robotic Arm', category: 'props', assetUrl: 'static/buddies/robot_arm.png', zIndex: 110 },
+        'sheet_16_screwdriver': { id: 'sheet_16_screwdriver', name: 'Screwdriver', category: 'props', assetUrl: 'static/buddies/screwdriver.png', zIndex: 110 },
+        'sheet_17_soda_can': { id: 'sheet_17_soda_can', name: 'Soda Can', category: 'props', assetUrl: 'static/buddies/soda_can.png', zIndex: 110 },
+        'sheet_18_headphones': { id: 'sheet_18_headphones', name: 'Studio Headphones', category: 'headwear', assetUrl: 'static/buddies/headphones.png', zIndex: 90 },
+        'sheet_19_sword': { id: 'sheet_19_sword', name: 'Sword', category: 'props', assetUrl: 'static/buddies/sword.png', zIndex: 110 },
+        'sheet_20_test_tube': { id: 'sheet_20_test_tube', name: 'Test Tube', category: 'props', assetUrl: 'static/buddies/test_tube.png', zIndex: 110 },
+        'sheet_21_wizard_staff': { id: 'sheet_21_wizard_staff', name: 'Wizard Staff', category: 'props', assetUrl: 'static/buddies/wizard_staff.png', zIndex: 110 },
+        'sheet_22_apron': { id: 'sheet_22_apron', name: 'Workshop Apron', category: 'tops', assetUrl: 'static/buddies/apron.png', zIndex: 60 },
+    };
+
+    function resolveBuddyAssetUrl(url) {
+        if (!url) return '';
+        const clean = String(url).trim();
+        const driveMatch = clean.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+                           clean.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/) ||
+                           clean.match(/drive\.google\.com\/uc\?id=([a-zA-Z0-9_-]+)/);
+        if (driveMatch && driveMatch[1]) {
+            return `https://lh3.googleusercontent.com/d/${driveMatch[1]}`;
+        }
+        if (clean.startsWith('http://') || clean.startsWith('https://')) {
+            return clean;
+        }
+        const rel = clean.replace(/^\/?(static\/)?/, '');
+        return `static/${rel}`;
+    }
+
+    function getMakerLevelFromXp(rawXp) {
+        const xp = Math.max(0, Math.min(Number(rawXp) >= 1000000 ? 0 : Number(rawXp) || 0, 999999));
+        let tier = MAKER_XP_LEVEL_TIERS[0];
+        for (let i = 0; i < MAKER_XP_LEVEL_TIERS.length; i++) {
+            if (xp >= MAKER_XP_LEVEL_TIERS[i].minXp) {
+                tier = MAKER_XP_LEVEL_TIERS[i];
+            } else {
+                break;
+            }
+        }
+        return tier;
+    }
+
+    async function loadBuddyDatabase() {
+        try {
+            console.log("[Buddy] Fetching 'Buddy_Items' wardrobe tab from Google Sheets...");
+            const res = await fetch(`${GOOGLE_SHEET_BASE}&sheet=Buddy_Items&t=${Date.now()}`);
+            if (!res.ok) return;
+            const text = await res.text();
+            const rows = parseCSV(text);
+            if (!rows || rows.length < 2) return;
+
+            const header = rows[0].map(h => String(h || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+            let nameIdx = -1, catIdx = -1, urlIdx = -1, activeIdx = -1, artistIdx = -1;
+            for (let i = 0; i < header.length; i++) {
+                const col = header[i];
+                if (col.includes('name') || col.includes('item') || col.includes('title')) nameIdx = i;
+                else if (col.includes('cat') || col.includes('layer') || col.includes('type')) catIdx = i;
+                else if (col.includes('url') || col.includes('asset') || col.includes('image') || col.includes('link') || col.includes('file')) urlIdx = i;
+                else if (col.includes('active') || col.includes('status') || col.includes('enable')) activeIdx = i;
+                else if (col.includes('artist') || col.includes('creator') || col.includes('author') || col.includes('by')) artistIdx = i;
+            }
+
+            if (nameIdx === -1 || urlIdx === -1) return;
+
+            for (let r = 1; r < rows.length; r++) {
+                const row = rows[r];
+                if (!row || row.length === 0) continue;
+                const name = String(row[nameIdx] || '').trim();
+                if (!name) continue;
+
+                if (activeIdx !== -1) {
+                    const act = String(row[activeIdx] || '').trim().toLowerCase();
+                    if (['pending', 'false', 'no', '0', 'inactive', 'archived'].includes(act)) continue;
+                }
+
+                const cat = catIdx !== -1 ? String(row[catIdx] || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '') : 'other';
+                let assetUrl = String(row[urlIdx] || '').trim();
+                if (!assetUrl) continue;
+
+                const resolvedUrl = resolveBuddyAssetUrl(assetUrl);
+                const zIndex = BUDDY_CATEGORY_LAYER_ORDER[cat] || 50;
+                const id = `sheet_${r}_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
+                buddyDatabase[id] = {
+                    id: id,
+                    name: name,
+                    category: cat,
+                    assetUrl: resolvedUrl,
+                    zIndex: zIndex,
+                    artist: artistIdx !== -1 ? String(row[artistIdx] || '').trim() : ''
+                };
+            }
+            console.log(`[Buddy] Successfully loaded ${Object.keys(buddyDatabase).length} items into Portal Door mascot catalog.`);
+        } catch (err) {
+            console.warn("[Buddy] Notice loading Buddy_Items tab:", err);
+        }
+    }
+
+    function renderBuddyAvatarHtml(buddyAvatar, xp = 0, buddyBucks = 0) {
+        let config = buddyAvatar;
+        if (typeof config === 'string') {
+            try { config = JSON.parse(config); } catch (_) { config = {}; }
+        }
+        if (!config || typeof config !== 'object') config = {};
+
+        const rawColor = String(config.baseColor || 'cyan').toLowerCase();
+        const baseColorHex = rawColor.startsWith('#') ? rawColor : (BUDDY_COLOR_MAP[rawColor] || '#3bc0cd');
+        const equipped = config.equipped || {};
+
+        const layers = [];
+        const baseBodyUrl = 'static/buddies/basic_buddy.png';
+        const baseBodyId = equipped.base_body || 'sheet_1_basic_buddy';
+        const baseItem = buddyDatabase[baseBodyId] || {
+            id: 'sheet_1_basic_buddy',
+            name: 'Basic Buddy',
+            category: 'base_body',
+            assetUrl: baseBodyUrl,
+            zIndex: 30
+        };
+
+        const allItems = Object.values(buddyDatabase);
+
+        Object.entries(equipped).forEach(([category, itemId]) => {
+            if (!itemId || category === 'base_body') return;
+            let item = buddyDatabase[itemId];
+            if (!item) {
+                const slug = String(itemId).replace(/^sheet_\d+_/, '').toLowerCase();
+                item = allItems.find(b => b.id.replace(/^sheet_\d+_/, '').toLowerCase() === slug || b.name.toLowerCase().replace(/[^a-z0-9]/g, '_') === slug);
+            }
+            if (item && item.assetUrl) {
+                layers.push(item);
+            } else if (String(itemId).startsWith('http') || String(itemId).startsWith('/')) {
+                layers.push({
+                    id: String(itemId),
+                    name: category,
+                    category: category,
+                    assetUrl: resolveBuddyAssetUrl(itemId),
+                    zIndex: BUDDY_CATEGORY_LAYER_ORDER[category] || 50
+                });
+            }
+        });
+
+        layers.sort((a, b) => (a.zIndex || 50) - (b.zIndex || 50));
+
+        const accessoriesHtml = layers.map(l => `
+            <div class="profile-buddy-layer" style="z-index: ${l.zIndex || 50};">
+                <img class="profile-buddy-img" src="${l.assetUrl}" alt="${escapeHtml(l.name || 'Accessory')}" onerror="this.style.display='none';" />
+            </div>
+        `).join('');
+
+        const levelTier = getMakerLevelFromXp(xp);
+
+        return `
+            <div class="profile-buddy-showcase">
+                <div class="profile-buddy-stage-wrapper">
+                    <div class="profile-buddy-stage">
+                        <div class="profile-buddy-shadow"></div>
+                        <div class="profile-buddy-layer" style="z-index: ${baseItem.zIndex || 30};">
+                            <div class="profile-buddy-color-mask" style="background-color: ${baseColorHex}; -webkit-mask-image: url('${baseItem.assetUrl}'); mask-image: url('${baseItem.assetUrl}');"></div>
+                            <img class="profile-buddy-img" src="${baseItem.assetUrl}" alt="Buddy Mascot" onerror="this.src='https://app.socialmedium.space/buddies/basic_buddy.png';" />
+                        </div>
+                        ${accessoriesHtml}
+                    </div>
+                </div>
+                <div class="profile-buddy-info">
+                    <div class="profile-buddy-level-badge">
+                        <span class="buddy-badge-icon">${levelTier.badgeEmoji}</span>
+                        <span class="buddy-badge-lvl">Lv. ${levelTier.level}</span>
+                        <span class="buddy-badge-title">${escapeHtml(levelTier.title)}</span>
+                    </div>
+                    <div class="profile-buddy-stats-row">
+                        <span class="buddy-stat-pill xp-pill" title="Experience Points">
+                            <span class="stat-icon">⭐</span>
+                            <span class="stat-val">${xp} XP</span>
+                        </span>
+                        <span class="buddy-stat-pill bucks-pill" title="Buddy Bucks Balance">
+                            <span class="stat-icon">🪙</span>
+                            <span class="stat-val">${buddyBucks} Bucks</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
     // Photobooth Mode State
     let isPhotoboothActive = false;
     let isTogglingPhotobooth = false;
@@ -1197,6 +1445,9 @@ document.addEventListener('DOMContentLoaded', () => {
             console.warn("[v8.5] Could not load 'Photobooth_Photos' tab:", pbPhotosErr);
         }
 
+        // 5. Fetch Buddy_Items Tab for Mascot Wardrobe & Custom Layers
+        await loadBuddyDatabase();
+
         // Fallback to local media_data.json if both tabs failed
         if (!devLoaded && !userLoaded) {
             try {
@@ -1415,15 +1666,68 @@ document.addEventListener('DOMContentLoaded', () => {
                 mediaType = 'image';
             }
 
+            // Extract Buddy Avatar (Field 120)
+            const avatarField = customFields.find(f => String(f.id) === "120" || (f.name || '').toLowerCase().includes("buddy avatar") || (f.name || '').toLowerCase() === "avatar");
+            let buddyAvatar = null;
+            if (avatarField && avatarField.value) {
+                const rawVal = String(avatarField.value).trim();
+                if (rawVal.startsWith('{')) {
+                    try {
+                        buddyAvatar = JSON.parse(rawVal);
+                    } catch (_) {}
+                }
+            }
+            if (!buddyAvatar) {
+                try {
+                    const localCfg = localStorage.getItem(`sm_buddy_config_${accountId}`) || localStorage.getItem(`sm_buddy_config_${normalized}`);
+                    if (localCfg) {
+                        buddyAvatar = JSON.parse(localCfg);
+                    }
+                } catch (_) {}
+            }
+
+            // Extract Buddy Bucks (Field 121)
+            const bbField = customFields.find(f => String(f.id) === "121" || (f.name || '').toLowerCase().includes("buddy buck"));
+            let buddyBucks = 0;
+            if (bbField && bbField.value !== undefined && bbField.value !== null) {
+                const num = parseInt(String(bbField.value).replace(/[^0-9]/g, ''), 10);
+                if (!isNaN(num)) buddyBucks = num;
+            } else {
+                try {
+                    const localBucks = localStorage.getItem(`sm_buddy_bucks_${accountId}`) || localStorage.getItem(`sm_buddy_bucks_${normalized}`);
+                    if (localBucks) buddyBucks = parseInt(localBucks, 10) || 0;
+                } catch (_) {}
+            }
+
+            // Extract XP (Field 122)
+            const xpField = customFields.find(f => String(f.id) === "122" || (f.name || '').toLowerCase().includes("experience points") || (f.name || '').toLowerCase() === "xp");
+            let xp = 0;
+            if (xpField && xpField.value !== undefined && xpField.value !== null) {
+                const num = parseInt(String(xpField.value).replace(/[^0-9]/g, ''), 10);
+                if (!isNaN(num) && num < 1000000) xp = num;
+            } else {
+                try {
+                    const localXp = localStorage.getItem(`sm_xp_${accountId}`) || localStorage.getItem(`sm_xp_${normalized}`);
+                    if (localXp) {
+                        const num = parseInt(localXp, 10);
+                        if (!isNaN(num) && num < 1000000) xp = num;
+                    }
+                } catch (_) {}
+            }
+
             return {
                 id: normalized,
+                accountId: accountId,
                 title: `${displayName}'s Portal`,
                 type: mediaType,
                 file_path: mediaUrl,
                 source: 'Neon One',
                 displayName: displayName,
                 certifications: certsList,
-                membershipStatus: ind.accountCurrentMembershipStatus ? `${ind.accountCurrentMembershipStatus} Member` : 'Active Member'
+                membershipStatus: ind.accountCurrentMembershipStatus ? `${ind.accountCurrentMembershipStatus} Member` : 'Active Member',
+                buddyAvatar: buddyAvatar,
+                buddyBucks: buddyBucks,
+                xp: xp
             };
         } catch (err) {
             console.warn('[Portal-Door] Neon One lookup error:', err);
@@ -1522,6 +1826,8 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
+        const buddyHtml = renderBuddyAvatarHtml(memberData.buddyAvatar, memberData.xp, memberData.buddyBucks);
+
         mediaDisplay.innerHTML = `
             <div class="certifications-container">
                 <span class="cert-badge">USER PROFILE • MEMBER PASSPORT</span>
@@ -1530,6 +1836,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="cert-tier">${status}</span>
                     <span class="cert-card-id">Card #${cardId}</span>
                 </div>
+                ${buddyHtml}
                 <div class="cert-section-label">Authorized Tool Certifications (${deduplicatedCount})</div>
                 <div class="cert-list-box">
                     ${certsListHtml}
@@ -1592,7 +1899,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            const memberPromise = (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications)
+            const memberPromise = (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications && currentPlayingMedia.buddyAvatar !== undefined)
                 ? Promise.resolve(currentPlayingMedia)
                 : fetchNeonOneMember(targetCardId);
 
@@ -1638,6 +1945,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     certifications: [],
                     membershipStatus: 'Active Member'
                 });
+
+                if (!memberData.buddyAvatar) {
+                    try {
+                        const localCfg = localStorage.getItem(`sm_buddy_config_${targetCardId}`);
+                        if (localCfg) memberData.buddyAvatar = JSON.parse(localCfg);
+                    } catch (_) {}
+                }
 
                 // Combine backend photos with local cached photos and session captures
                 const localPhotos = getLocalPhotosForCard(targetCardId);
@@ -3908,14 +4222,56 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Remote Settings Sync & Profile Beam Listener ---
+    let lastSeenActiveProfileCard = null;
+    let lastSeenSettingsUpdatedAt = null;
+
+    async function pollPortalDoorSettings() {
+        try {
+            const res = await fetch(`${NEON_PROXY_URL}/api/portal-door/settings?_t=${Date.now()}`, { cache: 'no-store' });
+            if (!res.ok) return;
+            const data = await res.json();
+            const settings = data?.settings;
+            if (!settings) return;
+
+            // Sync developer mode toggles if updated remotely
+            if (settings.updatedAt && settings.updatedAt !== lastSeenSettingsUpdatedAt) {
+                lastSeenSettingsUpdatedAt = settings.updatedAt;
+                if (typeof settings.sound === 'boolean' && settings.sound !== !isMuted) {
+                    isMuted = !settings.sound;
+                    updateSoundUI();
+                }
+                if (typeof settings.contestMode === 'boolean' && settings.contestMode !== isCostumeContestMode) {
+                    isCostumeContestMode = settings.contestMode;
+                    localStorage.setItem('portal_costume_contest', isCostumeContestMode ? 'true' : 'false');
+                    updateCostumeContestUI();
+                }
+                if (typeof settings.digitalBackground === 'boolean' && settings.digitalBackground !== isAiBgRemovalEnabled) {
+                    isAiBgRemovalEnabled = settings.digitalBackground;
+                    localStorage.setItem('portal_ai_bg_removal', isAiBgRemovalEnabled ? 'true' : 'false');
+                    updateBgRemovalUI();
+                }
+            }
+
+            // Sync remote profile trigger (e.g. from companion app Profile page "Show on Portal Door")
+            if (settings.activeProfileCardId && settings.activeProfileCardId !== lastSeenActiveProfileCard) {
+                lastSeenActiveProfileCard = settings.activeProfileCardId;
+                console.log(`[Portal Door Remote] Beaming User Profile for Card "${settings.activeProfileCardId}"...`);
+                openUserProfileScreen(settings.activeProfileCardId);
+            }
+        } catch (_) {}
+    }
+
     // Initial startup
-    console.log("Portal Door v8.4 initialized (Auto-save to Google Drive & instant User Profile photo sync ready).");
+    console.log("Portal Door v8.5 initialized (Buddy Avatar Showcase & instant User Profile sync ready).");
     mediaTitle.classList.remove('visible');
     controlsDiv.classList.remove('visible');
     updateSoundUI();
     updateCostumeContestUI();
     showHomeScreen();
     loadMediaDatabase();
+    setInterval(pollPortalDoorSettings, 2500);
+    pollPortalDoorSettings();
 
     // Remote Developer Settings 2-Way Sync with Neon Kiosk & Social Medium App
     syncPortalDoorSettingsFromBackend();
