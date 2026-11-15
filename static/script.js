@@ -266,18 +266,36 @@ document.addEventListener('DOMContentLoaded', () => {
         props: 110
     };
 
-    const MAKER_XP_LEVEL_TIERS = [
-        { level: 1, title: 'Novice Maker', minXp: 0, badgeEmoji: '🌱' },
-        { level: 2, title: 'Apprentice Tinkerer', minXp: 50, badgeEmoji: '🔨' },
-        { level: 3, title: 'Craftsperson', minXp: 125, badgeEmoji: '⚙️' },
-        { level: 4, title: 'Journeyman Builder', minXp: 250, badgeEmoji: '🧰' },
-        { level: 5, title: 'Artisan Specialist', minXp: 450, badgeEmoji: '🎨' },
-        { level: 6, title: 'Senior Fabricator', minXp: 700, badgeEmoji: '🚀' },
-        { level: 7, title: 'Master Engineer', minXp: 1000, badgeEmoji: '⚡' },
-        { level: 8, title: 'Visionary Inventor', minXp: 1400, badgeEmoji: '💡' },
-        { level: 9, title: 'Mythic Artificer', minXp: 1850, badgeEmoji: '🔮' },
-        { level: 10, title: 'Grandmaster Architect', minXp: 2400, badgeEmoji: '👑' }
+    let MAKER_XP_LEVEL_TIERS = [
+        { level: 1, title: 'Level 1', minXp: 0, badgeEmoji: '🌱' },
+        { level: 2, title: 'Level 2', minXp: 50, badgeEmoji: '🔨' },
+        { level: 3, title: 'Level 3', minXp: 250, badgeEmoji: '⚙️' },
+        { level: 4, title: 'Level 4', minXp: 500, badgeEmoji: '🧰' },
+        { level: 5, title: 'Level 5', minXp: 1000, badgeEmoji: '🎨' },
+        { level: 6, title: 'Level 6', minXp: 1500, badgeEmoji: '🚀' },
+        { level: 7, title: 'Level 7', minXp: 2000, badgeEmoji: '⚡' },
+        { level: 8, title: 'Level 8', minXp: 5000, badgeEmoji: '💡' },
+        { level: 9, title: 'Level 9', minXp: 10000, badgeEmoji: '🔮' },
+        { level: 10, title: 'Level 10', minXp: 25000, badgeEmoji: '👑' }
     ];
+
+    async function loadGlobalLevelTiers() {
+        try {
+            const res = await fetch(`${NEON_PROXY_URL}/api/app-settings?_t=${Date.now()}`, { cache: 'no-store' });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.settings && Array.isArray(data.settings.levelTiers) && data.settings.levelTiers.length > 0) {
+                MAKER_XP_LEVEL_TIERS = data.settings.levelTiers.map(t => ({
+                    level: t.level,
+                    title: t.title || `Level ${t.level}`,
+                    minXp: Number(t.minXp) || 0,
+                    badgeEmoji: t.badgeEmoji || '🌱'
+                })).sort((a, b) => a.minXp - b.minXp);
+            }
+        } catch (e) {
+            console.warn("[Portal Door] Could not load global level tiers:", e);
+        }
+    }
 
     let buddyDatabase = {
         'sheet_1_basic_buddy': { id: 'sheet_1_basic_buddy', name: 'Basic Buddy', category: 'base_body', assetUrl: 'static/buddies/basic_buddy.png', zIndex: 30 },
@@ -4457,6 +4475,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCostumeContestUI();
     showHomeScreen();
     loadMediaDatabase();
+    loadGlobalLevelTiers();
     setInterval(pollPortalDoorSettings, 2500);
     pollPortalDoorSettings();
 
