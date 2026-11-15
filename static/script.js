@@ -556,7 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Retrieve local photo history for a card (or all session photos if cardId is empty)
+    // Retrieve local photo history strictly for a card (or unlinked guest photos if cardId is empty)
     function getLocalPhotosForCard(cardId) {
         try {
             const raw = localStorage.getItem('portal_recent_photos');
@@ -565,70 +565,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const cleanCard = cardId ? String(cardId).trim().toLowerCase() : '';
             if (!cleanCard) {
-                return safeAll;
+                // Return only unlinked / guest session photos when NO user card is provided
+                return safeAll.filter(p => !p.cardId || p.cardId === 'Session' || p.cardId === 'guest');
             }
 
             const candidateIds = new Set();
-            candidateIds.add(cleanCard);
-            const norm = normalizeNfcTapCard(cleanCard).toLowerCase();
-            if (norm) candidateIds.add(norm);
-            if (/^\d+$/.test(cleanCard)) {
-                try { candidateIds.add(Number(cleanCard).toString(16).toLowerCase()); } catch (_) {}
-            } else if (/^[0-9a-fA-F]+$/.test(cleanCard)) {
-                try {
-                    const parsed = parseInt(cleanCard, 16);
-                    if (!isNaN(parsed)) candidateIds.add(parsed.toString());
-                } catch (_) {}
-            }
+            const allCands = getCandidateTapCardIds(cleanCard);
+            allCands.forEach(c => candidateIds.add(String(c).trim().toLowerCase()));
 
             const map = new Map();
 
-            // Check candidate localStorage keys
+            // 1. Check candidate-specific localStorage keys
             candidateIds.forEach(k => {
                 const mRaw = localStorage.getItem(`sm_portal_photos_${k}`) || localStorage.getItem(`portal_photos_${k}`);
                 if (mRaw) {
                     try {
                         const mList = JSON.parse(mRaw);
                         if (Array.isArray(mList)) {
-                            mList.forEach(p => { if (p && p.url) map.set(p.url, p); });
+                            mList.forEach(p => {
+                                if (p && p.url) {
+                                    map.set(p.url, p);
+                                }
+                            });
                         }
                     } catch (_) {}
                 }
             });
 
-            // Match from global recent photos
+            // 2. Match strictly from global recent photos where cardId explicitly matches one of the candidate IDs
             safeAll.forEach(p => {
-                const pRaw = String(p.cardId || '').trim().toLowerCase();
-                const pNorm = normalizeNfcTapCard(pRaw).toLowerCase();
-                let pHex = '';
-                let pDec = '';
-                if (/^\d+$/.test(pRaw)) {
-                    try { pHex = Number(pRaw).toString(16).toLowerCase(); } catch (_) {}
-                    pDec = pRaw;
-                } else if (/^[0-9a-fA-F]+$/.test(pRaw)) {
-                    pHex = pRaw;
-                    try {
-                        const parsed = parseInt(pRaw, 16);
-                        if (!isNaN(parsed)) pDec = parsed.toString();
-                    } catch (_) {}
-                }
-
-                if (!pRaw || candidateIds.has(pRaw) || candidateIds.has(pNorm) || (pHex && candidateIds.has(pHex)) || (pDec && candidateIds.has(pDec))) {
-                    if (p && p.url && !map.has(p.url)) {
-                        map.set(p.url, p);
+                if (!p || !p.url || !p.cardId) return; // Do NOT match photos without a cardId to a specific user!
+                const rawCards = String(p.cardId).split(/[,;\s]+/).map(t => t.trim().toLowerCase()).filter(Boolean);
+                const hasMatch = rawCards.some(t => {
+                    const tNorm = normalizeNfcTapCard(t).toLowerCase();
+                    let tHex = '';
+                    let tDec = '';
+                    if (/^\d+$/.test(t)) {
+                        try { tHex = Number(t).toString(16).toLowerCase(); } catch (_) {}
+                        tDec = t;
+                    } else if (/^[0-9a-fA-F]+$/.test(t)) {
+                        tHex = t;
+                        try {
+                            const parsed = parseInt(t, 16);
+                            if (!isNaN(parsed)) tDec = parsed.toString();
+                        } catch (_) {}
                     }
+                    return candidateIds.has(t) || candidateIds.has(tNorm) || (tHex && candidateIds.has(tHex)) || (tDec && candidateIds.has(tDec));
+                });
+
+                if (hasMatch && !map.has(p.url)) {
+                    map.set(p.url, p);
                 }
             });
 
-            // If still no photos matched specifically for this card, include recent session captures
-            if (map.size === 0 && safeAll.length > 0) {
-                safeAll.forEach(p => {
-                    if (p && p.url && !map.has(p.url)) {
-                        map.set(p.url, p);
-                    }
-                });
-            }
-
+            // Never fallback to safeAll! If user has no photos, return empty array so UI shows 0 photos
             return Array.from(map.values());
         } catch (e) {
             return [];
@@ -668,17 +658,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const candidateIds = new Set();
             if (cardId) {
                 const clean = String(cardId).trim().toLowerCase();
-                candidateIds.add(clean);
-                const norm = normalizeNfcTapCard(clean).toLowerCase();
-                if (norm) candidateIds.add(norm);
-                if (/^\d+$/.test(clean)) {
-                    try { candidateIds.add(Number(clean).toString(16).toLowerCase()); } catch (_) {}
-                } else if (/^[0-9a-fA-F]+$/.test(clean)) {
-                    try {
-                        const parsed = parseInt(clean, 16);
-                        if (!isNaN(parsed)) candidateIds.add(parsed.toString());
-                    } catch (_) {}
-                }
+                const allCands = getCandidateTapCardIds(clean);
+                allCands.forEach(c => candidateIds.add(String(c).trim().toLowerCase()));
             }
 
             const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
