@@ -318,6 +318,20 @@ document.addEventListener('DOMContentLoaded', () => {
         return `static/${rel}`;
     }
 
+    function hexToRgbNormalized(hex) {
+        let clean = String(hex || '#3bc0cd').replace(/[^0-9a-fA-F]/g, '');
+        if (clean.length === 3) {
+            clean = clean.split('').map(c => c + c).join('');
+        }
+        const num = parseInt(clean, 16);
+        if (isNaN(num)) return { r: 0.231, g: 0.753, b: 0.804 }; // #3bc0cd default
+        return {
+            r: ((num >> 16) & 255) / 255,
+            g: ((num >> 8) & 255) / 255,
+            b: (num & 255) / 255
+        };
+    }
+
     function getMakerLevelFromXp(rawXp) {
         const xp = Math.max(0, Math.min(Number(rawXp) >= 1000000 ? 0 : Number(rawXp) || 0, 999999));
         let tier = MAKER_XP_LEVEL_TIERS[0];
@@ -440,15 +454,26 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
 
         const levelTier = getMakerLevelFromXp(xp);
+        const rgb = hexToRgbNormalized(baseColorHex);
+        const filterId = 'buddy-tint-' + Math.random().toString(36).substring(2, 9);
 
         return `
             <div class="profile-buddy-showcase">
+                <svg width="0" height="0" style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;" aria-hidden="true">
+                    <filter id="${filterId}" color-interpolation-filters="sRGB">
+                        <feColorMatrix type="matrix" values="
+                            ${rgb.r.toFixed(3)} 0 0 0 0
+                            0 ${rgb.g.toFixed(3)} 0 0 0
+                            0 0 ${rgb.b.toFixed(3)} 0 0
+                            0 0 0 1 0" />
+                    </filter>
+                </svg>
                 <div class="profile-buddy-stage-wrapper">
                     <div class="profile-buddy-stage">
                         <div class="profile-buddy-shadow"></div>
-                        <div class="profile-buddy-layer" style="z-index: ${baseItem.zIndex || 30};">
-                            <div class="profile-buddy-color-mask" style="background-color: ${baseColorHex}; -webkit-mask-image: url('${baseItem.assetUrl}'); mask-image: url('${baseItem.assetUrl}');"></div>
-                            <img class="profile-buddy-img" src="${baseItem.assetUrl}" alt="Buddy Mascot" onerror="this.src='https://app.socialmedium.space/buddies/basic_buddy.png';" />
+                        <div class="profile-buddy-layer buddy-base-layer" style="z-index: ${baseItem.zIndex || 30}; isolation: isolate;">
+                            <div class="profile-buddy-color-mask" style="background-color: ${baseColorHex}; -webkit-mask: url('${baseItem.assetUrl}') center/contain no-repeat; mask: url('${baseItem.assetUrl}') center/contain no-repeat;"></div>
+                            <img class="profile-buddy-img profile-buddy-base-img" style="filter: url(#${filterId}); mix-blend-mode: multiply;" src="${baseItem.assetUrl}" alt="Buddy Mascot" onerror="this.src='https://app.socialmedium.space/buddies/basic_buddy.png';" />
                         </div>
                         ${accessoriesHtml}
                     </div>

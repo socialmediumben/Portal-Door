@@ -786,6 +786,14 @@ button:hover {
     transition: transform 0.2s ease-out;
 }
 
+.profile-buddy-layer.buddy-base-layer {
+    isolation: isolate;
+}
+
+.profile-buddy-base-img {
+    mix-blend-mode: multiply;
+}
+
 .profile-buddy-color-mask {
     position: absolute;
     inset: 0;
