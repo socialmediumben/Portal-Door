@@ -1709,30 +1709,34 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Helper: Fetch Full Member Record from Neon One (CRM Single Source of Truth) ---
     const neonMemberCache = new Map(); // Key: ID/Card -> { member, timestamp }
 
-    async function fetchNeonOneMember(tapCard) {
+    async function fetchNeonOneMember(tapCard, forceFresh = false) {
         try {
             const cleanCard = String(tapCard).trim();
             if (!cleanCard) return null;
             const normalized = normalizeNfcTapCard(cleanCard);
 
-            // Check in-memory cache first (valid for 2 minutes for instant profile switching)
-            const cachedEntry = neonMemberCache.get(cleanCard) || neonMemberCache.get(normalized);
-            if (cachedEntry && (Date.now() - cachedEntry.timestamp < 120000)) {
-                return cachedEntry.member;
+            // Check in-memory cache (valid for 3s to debounce duplicate scanner events, bypassed when forceFresh is true)
+            if (!forceFresh) {
+                const cachedEntry = neonMemberCache.get(cleanCard) || neonMemberCache.get(normalized);
+                if (cachedEntry && (Date.now() - cachedEntry.timestamp < 3000)) {
+                    return cachedEntry.member;
+                }
             }
 
-            console.log(`[Neon One] Looking up full constituent record for Tap Card "${normalized}" (raw: "${cleanCard}")...`);
+            console.log(`[Neon One] Looking up full constituent record for Tap Card "${normalized}" (raw: "${cleanCard}", forceFresh: ${forceFresh})...`);
             const candidates = getCandidateTapCardIds(cleanCard);
             console.log(`[Neon One] Looking up full constituent record for Tap Card candidates:`, candidates);
 
             let accountId = null;
             let matchedCard = null;
+            let accData = null;
 
             for (const cand of candidates) {
                 try {
-                    const searchRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/search`, {
+                    const searchRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/search?_t=${Date.now()}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-store',
                         body: JSON.stringify({
                             searchFields: [{ field: 'Tap Card', operator: 'EQUAL', value: cand }],
                             outputFields: ['Account ID'],
@@ -1752,11 +1756,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (_) {}
             }
 
+            // Direct Account ID fallback if numeric and not found by tap card
+            if (!accountId && /^\d+$/.test(cleanCard)) {
+                try {
+                    const directRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/${cleanCard}?_t=${Date.now()}`, { cache: 'no-store' });
+                    if (directRes.ok) {
+                        const directData = await directRes.json();
+                        if (directData && directData.individualAccount) {
+                            accountId = cleanCard;
+                            accData = directData;
+                            console.log(`[Neon One] Found Account #${accountId} directly by Account ID!`);
+                        }
+                    }
+                } catch (_) {}
+            }
+
             if (!accountId) return null;
 
-            const accRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/${accountId}`);
-            if (!accRes.ok) return null;
-            const accData = await accRes.json();
+            if (!accData) {
+                const accRes = await fetch(`${NEON_PROXY_URL}/api/v2/accounts/${accountId}?_t=${Date.now()}`, { cache: 'no-store' });
+                if (!accRes.ok) return null;
+                accData = await accRes.json();
+            }
 
             const ind = accData.individualAccount;
             if (!ind) return null;
@@ -1799,7 +1820,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (!buddyAvatar) {
                 try {
-                    const localCfg = localStorage.getItem(`sm_buddy_config_${accountId}`) || localStorage.getItem(`sm_buddy_config_${normalized}`) || localStorage.getItem(`sm_buddy_config_${cleanCard}`);
+                    const localCfg = localStorage.getItem(`sm_buddy_avatar_${accountId}`) || localStorage.getItem(`sm_buddy_config_${accountId}`) || localStorage.getItem(`sm_buddy_avatar_${normalized}`) || localStorage.getItem(`sm_buddy_config_${normalized}`) || localStorage.getItem(`sm_buddy_avatar_${cleanCard}`) || localStorage.getItem(`sm_buddy_config_${cleanCard}`);
                     if (localCfg) {
                         buddyAvatar = JSON.parse(localCfg);
                     }
@@ -1892,7 +1913,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Helper: Fetch Portal Media from Neon One (CRM Single Source of Truth) ---
     async function fetchNeonOnePortalMedia(tapCard) {
-        const member = await fetchNeonOneMember(tapCard);
+        const member = await fetchNeonOneMember(tapCard, true);
         if (member && member.file_path) {
             console.log(`[Neon One] Found active Portal Media for ${member.displayName} (Tap Card "${tapCard}"): ${member.file_path}`);
             return member;
@@ -2058,9 +2079,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-            const memberPromise = (currentPlayingMedia && currentPlayingMedia.id === targetCardId && currentPlayingMedia.certifications && currentPlayingMedia.buddyAvatar !== undefined && currentPlayingMedia.xp !== undefined && currentPlayingMedia.buddyBucks !== undefined)
-                ? Promise.resolve(currentPlayingMedia)
-                : fetchNeonOneMember(targetCardId);
+            const memberPromise = fetchNeonOneMember(targetCardId, true);
 
             const fetchPhotosWithFallback = async () => {
                 const map = new Map();
@@ -2107,7 +2126,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (!memberData.buddyAvatar) {
                     try {
-                        const localCfg = localStorage.getItem(`sm_buddy_config_${targetCardId}`);
+                        const localCfg = localStorage.getItem(`sm_buddy_avatar_${targetCardId}`) || localStorage.getItem(`sm_buddy_config_${targetCardId}`);
                         if (localCfg) memberData.buddyAvatar = JSON.parse(localCfg);
                     } catch (_) {}
                 }
@@ -2672,7 +2691,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (normalizedId && !isNonUserData(cleanId) && !isNonUserData(normalizedId)) {
-                fetchNeonOneMember(normalizedId).then(member => {
+                fetchNeonOneMember(normalizedId, true).then(member => {
                     const memberName = member?.preferredName || member?.firstName || member?.displayName || 'Member';
                     lastActiveMember = { id: normalizedId, displayName: memberName };
                     if (!taggedTapBands.some(b => b.cardId === normalizedId)) {
@@ -3283,9 +3302,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             // 1. Look up in Neon One CRM
-            let member = await fetchNeonOneMember(normalized);
+            let member = await fetchNeonOneMember(normalized, true);
             if (!member && normalized !== cleanCard) {
-                member = await fetchNeonOneMember(cleanCard);
+                member = await fetchNeonOneMember(cleanCard, true);
             }
 
             // 2. Fallback to local Users dataset only (never Developer or Photobooth tabs)
