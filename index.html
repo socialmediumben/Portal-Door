@@ -25,6 +25,7 @@
                 <button id="photoboothToggleBtn" class="dev-photobooth-btn" title="Toggle Photobooth Mode (*)">📸 Photo: OFF</button>
                 <button id="bgRemovalToggleBtn" class="dev-photobooth-btn" title="Toggle Physical / Digital Background (-)">🎭 Digital Background</button>
                 <button id="costumeContestToggleBtn" class="dev-photobooth-btn" title="Toggle Costume Contest Mode (C)">🏆 Contest: OFF</button>
+                <button id="impactToggleBtn" class="dev-photobooth-btn" title="Toggle Impact Fundraising Screen (I)">❤️ Impact: OFF</button>
                 <button id="soundToggleBtn" class="dev-sound-btn" title="Toggle audio on/off (.)">🔊 Sound: ON</button>
                 <span class="version-badge">v8.4</span>
             </div>
@@ -45,6 +46,7 @@
                 <div class="hotkey-item"><kbd>+</kbd><span>Snap</span></div>
                 <div class="hotkey-item" id="hotkeyBgRemoval" style="cursor: pointer;" title="Toggle Physical / Digital Background (click or press -)"><kbd>-</kbd><span>Background</span></div>
                 <div class="hotkey-item" id="hotkeyContest" style="cursor: pointer;" title="Toggle Costume Contest Mode (click or press C)"><kbd>C</kbd><span>Contest</span></div>
+                <div class="hotkey-item" id="hotkeyImpact" style="cursor: pointer;" title="Toggle Impact Fundraising Screen (click or press I)"><kbd>I</kbd><span>Impact</span></div>
                 <div class="hotkey-item" id="hotkeyReload" style="cursor: pointer;" title="Reload Database (click or press ))"><kbd>)</kbd><span>Reload</span></div>
                 <div class="hotkey-item"><kbd>Enter</kbd><span>Trigger</span></div>
             </div>
@@ -224,6 +226,64 @@
             <div class="capture-footer-guide">
                 <span id="deleteConfirmHint" class="confirm-delete-hint"><kbd>Enter</kbd> Confirm Delete</span>
                 <span><kbd>/</kbd> or <kbd>Esc</kbd> Cancel</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Impact & Fundraising Thermometer Modal (I) -->
+    <div id="impactModal" class="capture-modal impact-modal" style="display: none;">
+        <div id="impactCard" class="capture-result-card impact-card" style="max-width: 580px; width: 92%;">
+            <div class="capture-header">
+                <div class="capture-header-top">
+                    <span class="capture-title" style="color: #e11d48; display: flex; align-items: center; gap: 8px;">❤️ COMMUNITY IMPACT & FUNDRAISING</span>
+                    <button id="impactCloseBtn" class="close-btn" style="background: none; border: none; font-size: 1.5rem; color: #fff; cursor: pointer;">✕</button>
+                </div>
+                <span id="portalImpactHeadline" class="capture-subtitle" style="font-size: 1.1rem; font-weight: bold; color: #fff;">Support Social Medium Makerspace</span>
+            </div>
+
+            <div style="padding: 20px 24px; text-align: center; color: #fff;">
+                <p id="portalImpactDesc" style="font-size: 0.95rem; line-height: 1.5; color: #e2e8f0; margin-bottom: 20px;">
+                    Help us expand tool access, support community workshops, and keep creativity thriving for all!
+                </p>
+
+                <!-- Digital Thermometer Container -->
+                <div style="background: rgba(15, 23, 42, 0.75); border: 2px solid rgba(225, 29, 72, 0.4); border-radius: 20px; padding: 20px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px;">
+                        <div style="text-align: left;">
+                            <div style="font-size: 0.75rem; text-transform: uppercase; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em;">Raised</div>
+                            <div id="portalImpactRaised" style="font-size: 1.8rem; font-weight: 900; color: #f43f5e; font-family: monospace;">$0</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.75rem; text-transform: uppercase; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em;">Campaign Goal</div>
+                            <div id="portalImpactGoal" style="font-size: 1.3rem; font-weight: 800; color: #cbd5e1; font-family: monospace;">$5,000</div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div style="width: 100%; height: 20px; background: rgba(51, 65, 85, 0.6); border-radius: 10px; overflow: hidden; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.1);">
+                        <div id="portalImpactBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #f43f5e, #fb7185); border-radius: 10px; transition: width 0.8s ease;"></div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: bold; color: #94a3b8;">
+                        <span id="portalImpactPct" style="color: #fb7185;">0% of Goal Reached</span>
+                        <span id="portalImpactDonors">0 Community Supporters</span>
+                    </div>
+                </div>
+
+                <!-- QR Scan Section -->
+                <div style="background: rgba(255, 255, 255, 0.08); border-radius: 18px; padding: 16px; display: inline-flex; flex-direction: column; align-items: center; gap: 8px; border: 1px solid rgba(255, 255, 255, 0.15);">
+                    <div style="font-size: 0.85rem; font-weight: bold; color: #f1f5f9;">📱 Scan with Phone to Donate</div>
+                    <div style="padding: 10px; background: #fff; border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                        <img id="portalImpactQr" src="" alt="Scan to donate" style="width: 130px; height: 130px; display: block;" />
+                    </div>
+                    <div id="portalImpactUrlText" style="font-size: 0.72rem; color: #94a3b8; font-family: monospace; max-width: 320px; word-break: break-all;">
+                        socialmedium.app.neoncrm.com
+                    </div>
+                </div>
+            </div>
+
+            <div class="capture-footer-guide">
+                <span><kbd>I</kbd> or <kbd>Esc</kbd> Close Impact Screen</span>
             </div>
         </div>
     </div>

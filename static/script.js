@@ -18,6 +18,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const hotkeyBgRemoval = document.getElementById('hotkeyBgRemoval');
     const costumeContestToggleBtn = document.getElementById('costumeContestToggleBtn');
     const hotkeyContest = document.getElementById('hotkeyContest');
+    const impactToggleBtn = document.getElementById('impactToggleBtn');
+    const hotkeyImpact = document.getElementById('hotkeyImpact');
+    const impactModal = document.getElementById('impactModal');
+    const impactCloseBtn = document.getElementById('impactCloseBtn');
     const scriptUrlInput = document.getElementById('scriptUrlInput');
 
     // Capture Modal Elements
@@ -279,6 +283,70 @@ document.addEventListener('DOMContentLoaded', () => {
         { level: 10, title: 'Level 10', minXp: 25000, badgeEmoji: '👑' }
     ];
 
+    let isImpactModalOpen = false;
+    let currentImpactSettings = null;
+
+    function openImpactOverlay() {
+        if (!impactModal) return;
+        isImpactModalOpen = true;
+        impactModal.style.display = 'flex';
+        if (impactToggleBtn) {
+            impactToggleBtn.textContent = '❤️ Impact: ON';
+            impactToggleBtn.classList.add('contest-active');
+        }
+    }
+
+    function closeImpactOverlay() {
+        if (!impactModal) return;
+        isImpactModalOpen = false;
+        impactModal.style.display = 'none';
+        if (impactToggleBtn) {
+            impactToggleBtn.textContent = '❤️ Impact: OFF';
+            impactToggleBtn.classList.remove('contest-active');
+        }
+    }
+
+    function toggleImpactOverlay() {
+        if (isImpactModalOpen) {
+            closeImpactOverlay();
+        } else {
+            openImpactOverlay();
+        }
+    }
+
+    function updatePortalImpactUI(settings) {
+        if (!settings) return;
+        currentImpactSettings = settings;
+
+        const goal = Math.max(1, Number(settings.goalAmount) || 5000);
+        const raised = Math.max(0, Number(settings.raisedAmount) || 0);
+        const pct = Math.min(100, Math.round((raised / goal) * 100));
+
+        const headline = settings.headline || 'Support Social Medium Makerspace';
+        const desc = settings.description || 'Help us expand tool access, support community workshops, and keep creativity thriving for all!';
+        const formUrl = settings.donationFormUrl || 'https://socialmedium.app.neoncrm.com/forms/give';
+
+        const hEl = document.getElementById('portalImpactHeadline');
+        const dEl = document.getElementById('portalImpactDesc');
+        const rEl = document.getElementById('portalImpactRaised');
+        const gEl = document.getElementById('portalImpactGoal');
+        const bEl = document.getElementById('portalImpactBar');
+        const pEl = document.getElementById('portalImpactPct');
+        const donEl = document.getElementById('portalImpactDonors');
+        const qrEl = document.getElementById('portalImpactQr');
+        const urlTextEl = document.getElementById('portalImpactUrlText');
+
+        if (hEl) hEl.textContent = headline;
+        if (dEl) dEl.textContent = desc;
+        if (rEl) rEl.textContent = `$${raised.toLocaleString()}`;
+        if (gEl) gEl.textContent = `$${goal.toLocaleString()}`;
+        if (bEl) bEl.style.width = `${pct}%`;
+        if (pEl) pEl.textContent = `${pct}% of Goal Reached`;
+        if (donEl) donEl.textContent = `${settings.donorCount || 0} Community Supporters`;
+        if (qrEl) qrEl.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(formUrl)}`;
+        if (urlTextEl) urlTextEl.textContent = formUrl;
+    }
+
     async function loadGlobalLevelTiers() {
         try {
             const res = await fetch(`${NEON_PROXY_URL}/api/app-settings?_t=${Date.now()}`, { cache: 'no-store' });
@@ -291,6 +359,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     minXp: Number(t.minXp) || 0,
                     badgeEmoji: t.badgeEmoji || '🌱'
                 })).sort((a, b) => a.minXp - b.minXp);
+            }
+            if (data.settings && data.settings.impactSettings) {
+                updatePortalImpactUI(data.settings.impactSettings);
             }
         } catch (e) {
             console.warn("[Portal Door] Could not load global level tiers:", e);
@@ -1020,6 +1091,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hotkeyContest) {
         hotkeyContest.addEventListener('click', () => {
             toggleCostumeContest();
+        });
+    }
+
+    if (impactToggleBtn) {
+        impactToggleBtn.addEventListener('click', () => {
+            toggleImpactOverlay();
+        });
+    }
+
+    if (hotkeyImpact) {
+        hotkeyImpact.addEventListener('click', () => {
+            toggleImpactOverlay();
+        });
+    }
+
+    if (impactCloseBtn) {
+        impactCloseBtn.addEventListener('click', () => {
+            closeImpactOverlay();
+        });
+    }
+
+    if (impactModal) {
+        impactModal.addEventListener('click', (e) => {
+            if (e.target === impactModal) closeImpactOverlay();
         });
     }
 
@@ -4056,6 +4151,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Global Keypad & Keyboard Listener (Pure Keypad / NFC Navigation) ---
     document.addEventListener('keydown', (event) => {
+        // --- 0A. IMPACT MODAL NAVIGATION ---
+        if (isImpactModalOpen) {
+            if (event.key === 'Escape' || event.key === 'Backspace' || event.key === 'i' || event.key === 'I') {
+                event.preventDefault();
+                closeImpactOverlay();
+                return;
+            }
+            if (event.key === '(' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
+                event.preventDefault();
+                toggleFullscreen();
+                return;
+            }
+            return;
+        }
+
         // --- 0. DELETE CONFIRMATION MODAL NAVIGATION ---
         if (isDeleteConfirmOpen) {
             resetDeleteInactivityTimer();
@@ -4334,6 +4444,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 toggleCostumeContest();
                 return;
             }
+        }
+
+        // Hotkey: I or Shift+I toggles Impact Fundraising Campaign Overlay
+        if ((event.key === 'i' || event.key === 'I') && (event.shiftKey || event.ctrlKey || (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput))) {
+            event.preventDefault();
+            toggleImpactOverlay();
+            return;
         }
 
         // Hotkey: * (asterisk / multiply) toggles Photobooth Mode ON/OFF
