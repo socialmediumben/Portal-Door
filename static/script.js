@@ -376,7 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!rows || rows.length < 2) return;
 
             const header = rows[0].map(h => String(h || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
-            let nameIdx = -1, catIdx = -1, urlIdx = -1, activeIdx = -1, artistIdx = -1;
+            let nameIdx = -1, catIdx = -1, urlIdx = -1, activeIdx = -1, artistIdx = -1, colorPickerIdx = -1;
             for (let i = 0; i < header.length; i++) {
                 const col = header[i];
                 if (col.includes('name') || col.includes('item') || col.includes('title')) nameIdx = i;
@@ -384,6 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 else if (col.includes('url') || col.includes('asset') || col.includes('image') || col.includes('link') || col.includes('file')) urlIdx = i;
                 else if (col.includes('active') || col.includes('status') || col.includes('enable')) activeIdx = i;
                 else if (col.includes('artist') || col.includes('creator') || col.includes('author') || col.includes('by')) artistIdx = i;
+                else if (col.includes('colorpick') || col.includes('tintable') || col === 'picker' || col === 'tint') colorPickerIdx = i;
             }
 
             if (nameIdx === -1 || urlIdx === -1) return;
@@ -403,6 +404,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 let assetUrl = String(row[urlIdx] || '').trim();
                 if (!assetUrl) continue;
 
+                let colorPicker = false;
+                if (colorPickerIdx !== -1) {
+                    const cpVal = String(row[colorPickerIdx] || '').trim().toLowerCase();
+                    colorPicker = ['true', '1', 'yes', 'y'].includes(cpVal);
+                }
+
                 const resolvedUrl = resolveBuddyAssetUrl(assetUrl);
                 const zIndex = BUDDY_CATEGORY_LAYER_ORDER[cat] || 50;
                 const id = `sheet_${r}_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
@@ -413,6 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     category: cat,
                     assetUrl: resolvedUrl,
                     zIndex: zIndex,
+                    colorPicker: colorPicker,
                     artist: artistIdx !== -1 ? String(row[artistIdx] || '').trim() : ''
                 };
             }
@@ -468,11 +476,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         layers.sort((a, b) => (a.zIndex || 50) - (b.zIndex || 50));
 
-        const accessoriesHtml = layers.map(l => `
-            <div class="profile-buddy-layer" style="z-index: ${l.zIndex || 50};">
-                <img class="profile-buddy-img" src="${l.assetUrl}" alt="${escapeHtml(l.name || 'Accessory')}" onerror="this.style.display='none';" />
-            </div>
-        `).join('');
+        const accessoriesHtml = layers.map(l => {
+            const isTinted = l.colorPicker || (config.equippedColors && (config.equippedColors[l.category] || config.equippedColors[l.id]));
+            const layerColorHex = (config.equippedColors && (config.equippedColors[l.category] || config.equippedColors[l.id])) || (l.colorPicker ? '#ffffff' : null);
+            if (isTinted && layerColorHex) {
+                return `
+                    <div class="profile-buddy-layer" style="z-index: ${l.zIndex || 50}; isolation: isolate;">
+                        <div class="profile-buddy-color-mask" style="background-color: ${layerColorHex}; -webkit-mask: url('${l.assetUrl}') center/contain no-repeat; mask: url('${l.assetUrl}') center/contain no-repeat;"></div>
+                        <img class="profile-buddy-img" style="mix-blend-mode: multiply;" src="${l.assetUrl}" alt="${escapeHtml(l.name || 'Accessory')}" onerror="this.style.display='none';" />
+                    </div>
+                `;
+            }
+            return `
+                <div class="profile-buddy-layer" style="z-index: ${l.zIndex || 50};">
+                    <img class="profile-buddy-img" src="${l.assetUrl}" alt="${escapeHtml(l.name || 'Accessory')}" onerror="this.style.display='none';" />
+                </div>
+            `;
+        }).join('');
 
         const levelTier = getMakerLevelFromXp(xp);
         const rgb = hexToRgbNormalized(baseColorHex);
