@@ -341,8 +341,11 @@ document.addEventListener('DOMContentLoaded', () => {
         currentImpactSettings = settings;
 
         const goal = Math.max(1, Number(settings.goalAmount) || 5000);
-        const raised = Math.max(0, Number(settings.raisedAmount) || 0);
+        const raised = Math.max(0, Number(settings.raisedAmount !== undefined ? settings.raisedAmount : (settings.currentAmount || 0)));
         const pct = Math.min(100, Math.round((raised / goal) * 100));
+        const formattedRaised = (raised % 1 !== 0)
+            ? `$${raised.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            : `$${raised.toLocaleString()}`;
 
         const headline = settings.headline || 'Support Social Medium Makerspace';
         const desc = settings.description || 'Help us expand tool access, support community workshops, and keep creativity thriving for all!';
@@ -360,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (hEl) hEl.textContent = headline;
         if (dEl) dEl.textContent = desc;
-        if (rEl) rEl.textContent = `$${raised.toLocaleString()}`;
+        if (rEl) rEl.textContent = formattedRaised;
         if (gEl) gEl.textContent = `$${goal.toLocaleString()}`;
         if (bEl) bEl.style.width = `${pct}%`;
         if (pEl) pEl.textContent = `${pct}% of Goal Reached`;
