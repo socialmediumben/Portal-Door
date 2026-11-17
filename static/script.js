@@ -283,35 +283,57 @@ document.addEventListener('DOMContentLoaded', () => {
         { level: 10, title: 'Level 10', minXp: 25000, badgeEmoji: '👑' }
     ];
 
+    let isImpactMode = localStorage.getItem('portal_impact_mode') === 'true';
     let isImpactModalOpen = false;
     let currentImpactSettings = null;
+
+    function updateImpactModeUI() {
+        if (impactToggleBtn) {
+            if (isImpactMode) {
+                impactToggleBtn.textContent = '❤️ Impact: ON';
+                impactToggleBtn.classList.add('contest-active');
+            } else {
+                impactToggleBtn.textContent = '❤️ Impact: OFF';
+                impactToggleBtn.classList.remove('contest-active');
+            }
+        }
+    }
+
+    function toggleImpactMode(forceVal) {
+        if (typeof forceVal === 'boolean') {
+            isImpactMode = forceVal;
+        } else {
+            isImpactMode = !isImpactMode;
+        }
+        localStorage.setItem('portal_impact_mode', isImpactMode ? 'true' : 'false');
+        console.log(`[Portal Door] Impact Mode set to: ${isImpactMode}`);
+        updateImpactModeUI();
+        if (isAtHomeScreen) {
+            if (isImpactMode) {
+                openImpactOverlay();
+            } else {
+                closeImpactOverlay();
+                showHomeScreen();
+            }
+        }
+    }
 
     function openImpactOverlay() {
         if (!impactModal) return;
         isImpactModalOpen = true;
         impactModal.style.display = 'flex';
-        if (impactToggleBtn) {
-            impactToggleBtn.textContent = '❤️ Impact: ON';
-            impactToggleBtn.classList.add('contest-active');
-        }
+        updateImpactModeUI();
     }
 
     function closeImpactOverlay() {
         if (!impactModal) return;
         isImpactModalOpen = false;
         impactModal.style.display = 'none';
-        if (impactToggleBtn) {
-            impactToggleBtn.textContent = '❤️ Impact: OFF';
-            impactToggleBtn.classList.remove('contest-active');
-        }
+        updateImpactModeUI();
     }
 
     function toggleImpactOverlay() {
-        if (isImpactModalOpen) {
-            closeImpactOverlay();
-        } else {
-            openImpactOverlay();
-        }
+        toggleImpactMode();
     }
 
     function updatePortalImpactUI(settings) {
@@ -926,6 +948,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const payload = {
                 contestMode: Boolean(isCostumeContestMode),
+                impactMode: Boolean(isImpactMode),
                 digitalBackground: Boolean(isAiBgRemovalEnabled),
                 sound: !Boolean(isMuted),
                 photoboothMode: Boolean(isPhotoboothActive),
@@ -953,6 +976,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const newHash = JSON.stringify({
                 contestMode: settings.contestMode,
+                impactMode: settings.impactMode,
                 digitalBackground: settings.digitalBackground,
                 sound: settings.sound,
                 photoboothMode: settings.photoboothMode
@@ -966,6 +990,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // 1. Contest Mode
             if (typeof settings.contestMode === "boolean" && settings.contestMode !== isCostumeContestMode) {
                 toggleCostumeContest(settings.contestMode);
+            }
+
+            // 1B. Impact Mode
+            if (typeof settings.impactMode === "boolean" && settings.impactMode !== isImpactMode) {
+                toggleImpactMode(settings.impactMode);
             }
 
             // 2. Digital Background vs Physical Background
@@ -1088,21 +1117,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (hotkeyContest) {
-        hotkeyContest.addEventListener('click', () => {
-            toggleCostumeContest();
-        });
-    }
-
     if (impactToggleBtn) {
+        updateImpactModeUI();
         impactToggleBtn.addEventListener('click', () => {
-            toggleImpactOverlay();
-        });
-    }
-
-    if (hotkeyImpact) {
-        hotkeyImpact.addEventListener('click', () => {
-            toggleImpactOverlay();
+            toggleImpactMode();
         });
     }
 
@@ -1748,6 +1766,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 togglePhotobooth(true);
             }
             updatePhotoboothVisibility();
+            if (isImpactMode) {
+                openImpactOverlay();
+            } else {
+                closeImpactOverlay();
+            }
             console.log("[v8.0] Physical Background Mode active. Live camera stream ready.");
             return;
         }
@@ -1762,10 +1785,16 @@ document.addEventListener('DOMContentLoaded', () => {
         img.src = defaultClosedDoorUrl;
         img.alt = "Portal Door Closed";
         mediaDisplay.appendChild(img);
+
+        if (isImpactMode) {
+            openImpactOverlay();
+        } else {
+            closeImpactOverlay();
+        }
         console.log("[v6.0] Home Screen active (doors closed). System ready.");
     }
 
-    // --- Return to Home Screen (triggered by '/' key) ---
+    // --- Return to Home Screen (triggered by Backspace / Home key) ---
     async function returnToHomeScreen() {
         if (isTransitioning) return;
 
@@ -1788,11 +1817,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 togglePhotobooth(true);
             }
             updatePhotoboothVisibility();
+            if (isImpactMode) {
+                openImpactOverlay();
+            } else {
+                closeImpactOverlay();
+            }
             return;
         }
 
         if (isAtHomeScreen) {
             console.log("[v6.0] Already at Home Screen.");
+            if (isImpactMode) {
+                openImpactOverlay();
+            }
             return;
         }
 
@@ -2158,6 +2195,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Open User Profile Screen (Certifications + Recent Photos with offline/instant merge) ---
     function openUserProfileScreen(cardIdToUse) {
+        closeImpactOverlay();
         // If already viewing profile and no new specific card requested, toggle back to playing media or home
         if (isShowingCertifications && !cardIdToUse) {
             isShowingCertifications = false;
@@ -2377,6 +2415,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openPhotoboothPickerModal() {
         if (isTransitioning || isCaptureModalOpen) return;
+        closeImpactOverlay();
         isPhotoboothGalleryOpen = true;
         renderPhotoboothGalleryCards();
         if (photoboothGalleryModal) {
@@ -2795,6 +2834,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         closeCaptureModal(false);
         closePhotoboothGalleryModal();
+        closeImpactOverlay();
 
         // Physical Background Mode: Party photobooth mirror (No personal media or door transitions)
         if (!isAiBgRemovalEnabled) {
@@ -3608,6 +3648,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Start 5-4-3-2-1 Countdown and Snapshot
     async function startPhotoCountdown() {
         if (isCountingDown || isCaptureModalOpen) return;
+        closeImpactOverlay();
         if (physicalModeIdleTimer) {
             clearTimeout(physicalModeIdleTimer);
             physicalModeIdleTimer = null;
@@ -4151,21 +4192,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Global Keypad & Keyboard Listener (Pure Keypad / NFC Navigation) ---
     document.addEventListener('keydown', (event) => {
-        // --- 0A. IMPACT MODAL NAVIGATION ---
-        if (isImpactModalOpen) {
-            if (event.key === 'Escape' || event.key === 'Backspace' || event.key === 'i' || event.key === 'I') {
-                event.preventDefault();
-                closeImpactOverlay();
-                return;
-            }
-            if (event.key === '(' || event.key === 'LaunchCalculator' || event.code === 'LaunchApp2') {
-                event.preventDefault();
-                toggleFullscreen();
-                return;
-            }
-            return;
-        }
-
         // --- 0. DELETE CONFIRMATION MODAL NAVIGATION ---
         if (isDeleteConfirmOpen) {
             resetDeleteInactivityTimer();
@@ -4437,21 +4463,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Hotkey: Shift+C toggles Costume Contest Mode (Shift required so 'c' in hex NFC card scans is not intercepted)
-        if ((event.key === 'c' || event.key === 'C') && (event.shiftKey || event.ctrlKey)) {
-            if (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput) {
-                event.preventDefault();
-                toggleCostumeContest();
-                return;
-            }
-        }
-
-        // Hotkey: I or Shift+I toggles Impact Fundraising Campaign Overlay
-        if ((event.key === 'i' || event.key === 'I') && (event.shiftKey || event.ctrlKey || (document.activeElement !== contentIdInput && document.activeElement !== scriptUrlInput))) {
-            event.preventDefault();
-            toggleImpactOverlay();
-            return;
-        }
 
         // Hotkey: * (asterisk / multiply) toggles Photobooth Mode ON/OFF
         if (event.key === '*' || event.code === 'NumpadMultiply') {
@@ -4607,6 +4618,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     localStorage.setItem('portal_costume_contest', isCostumeContestMode ? 'true' : 'false');
                     updateCostumeContestUI();
                 }
+                if (typeof settings.impactMode === 'boolean' && settings.impactMode !== isImpactMode) {
+                    toggleImpactMode(settings.impactMode);
+                }
                 if (typeof settings.digitalBackground === 'boolean' && settings.digitalBackground !== isAiBgRemovalEnabled) {
                     isAiBgRemovalEnabled = settings.digitalBackground;
                     localStorage.setItem('portal_ai_bg_removal', isAiBgRemovalEnabled ? 'true' : 'false');
@@ -4629,6 +4643,7 @@ document.addEventListener('DOMContentLoaded', () => {
     controlsDiv.classList.remove('visible');
     updateSoundUI();
     updateCostumeContestUI();
+    updateImpactModeUI();
     showHomeScreen();
     loadMediaDatabase();
     loadGlobalLevelTiers();
