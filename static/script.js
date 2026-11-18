@@ -71,6 +71,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!raw) return '';
         const clean = String(raw).trim();
 
+        // 0. Support Demo / Sandbox keywords
+        if (['DEMO', 'SANDBOX', 'TEST', 'DEMO-2026', 'DEMO2026'].includes(clean.toUpperCase())) {
+            return 'DEMO-2026';
+        }
+
         // 1. If it's already an 8-10 digit decimal number, return as-is
         if (/^\d{8,10}$/.test(clean)) {
             return clean;
@@ -1870,6 +1875,37 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!cleanCard) return null;
             const normalized = normalizeNfcTapCard(cleanCard);
 
+            // Instant resolution for Sandbox / Demo account
+            const cleanLower = cleanCard.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (['demo', 'sandbox', 'test', 'demo2026', 'sandboxdemo'].includes(cleanLower)) {
+                return {
+                    id: "DEMO-2026",
+                    accountId: "sandbox-demo",
+                    firstName: "Jordan",
+                    lastName: "Taylor",
+                    preferredName: "Jordan",
+                    displayName: "Jordan Taylor",
+                    file_path: "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=1200&q=80",
+                    type: "image",
+                    certs: ["Laser Cutter (CO2 80W)", "3D Printing (FDM / Bambu Lab)", "Woodshop Safety & Table Saw", "Electronics & Soldering Bench", "Vinyl Cutter & Heat Press"],
+                    buddyAvatar: {
+                        bodyColor: "#3bc0cd",
+                        eyeStyle: "happy",
+                        mouthStyle: "smile",
+                        clothes: "apron",
+                        hat: "goggles",
+                        shoes: "sneakers",
+                        accessory: "wrench"
+                    },
+                    buddyBucks: 175,
+                    xp: 420,
+                    level: 3,
+                    levelTitle: "Apprentice Tinkerer",
+                    levelBadge: "⚙️",
+                    isSceneBackdrop: false
+                };
+            }
+
             // Check in-memory cache (valid for 3s to debounce duplicate scanner events, bypassed when forceFresh is true)
             if (!forceFresh) {
                 const cachedEntry = neonMemberCache.get(cleanCard) || neonMemberCache.get(normalized);
@@ -2268,6 +2304,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     photos.forEach(p => { if (p && p.url && !map.has(p.url)) map.set(p.url, p); });
                 } catch (_) {}
+
+                // Include sample photo for Sandbox Demo account
+                if (['DEMO-2026', 'DEMO', 'SANDBOX', 'TEST', 'sandbox-demo'].includes(String(targetCardId).toUpperCase())) {
+                    const samplePhoto = {
+                        id: 'sandbox_demo_photo_1',
+                        cardId: 'DEMO-2026',
+                        url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=1200&q=80',
+                        timestamp: '2026-11-15T19:30:00Z',
+                        caption: 'Makerspace Showcase Photo'
+                    };
+                    if (!map.has(samplePhoto.url)) map.set(samplePhoto.url, samplePhoto);
+                }
 
                 return Array.from(map.values());
             };
